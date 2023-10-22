@@ -216,6 +216,7 @@ elif args.task in ["TIMME", "TIMME_hierarchical", "TIMME_SingleLink"]:
     if args.task in ["TIMME_hierarchical"]:
         print("Architecture 2, lambda value: {} for relations: {}".format(model.attention_weight, " ".join(relations)))
 
+os.makedirs('saved_model', exist_ok=True)
 model_name = f'../saved_model/{args.cycle}_{args.data}_{args.task}'
 if args.hidden != 100:
     model_name = model_name + f'_{args.hidden}'
