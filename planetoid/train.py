@@ -1,18 +1,15 @@
-import numpy as np
 import torch
 import torch.nn.functional as F
 from torch_geometric.datasets import Planetoid
 import torch_geometric.transforms as T
-from torch_geometric.data import Data
-from torch_geometric.utils import degree
 from models import MyGCN, MyGraphSAGE, MyGAT
 import argparse
 from best_config import config
-import copy
+import os
 
 argparser = argparse.ArgumentParser("Bias Detection", formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-argparser.add_argument("--dataset", type=str, default="Cora", choices=['Cora', 'CiteSeer', 'PubMed', 'ogbn-arxiv'])
-argparser.add_argument('--model', type=str, default='GCN', choices=['GCN', 'GraphSAGE', 'GAT', 'DrGAT'])
+argparser.add_argument("--dataset", type=str, default="Cora", choices=['Cora', 'CiteSeer', 'PubMed'])
+argparser.add_argument('--model', type=str, default='GCN', choices=['GCN', 'GraphSAGE', 'GAT'])
 argparser.add_argument('--n_layers', type=int, default=0, help="0: use default")
 argparser.add_argument('--hidden_size', type=int, default=0, help="0: use default")
 args = argparser.parse_args()
@@ -96,7 +93,6 @@ def train(cycle):
             acc = int(correct) / int(data.val_mask.sum())
             if acc > best_acc:
                 best_acc = acc
-                print(epoch, acc)
                 # final_out = F.softmax(out, dim=1)
                 if args.hidden_size == config['hidden_size']:
                     torch.save(model.state_dict(), f'saved_model/{args.dataset}_{args.model}_{args.n_layers}_{cycle}.pkl')
@@ -107,8 +103,11 @@ def train(cycle):
                     break
                 else:
                     patience = patience + 1
+        if epoch % 10 == 9:
+            print(f'Epoche: {epoch + 1}, Loss: {loss:.4f}, Valid acc: {100*acc:.2f}, Best Valid acc: {100*best_acc:.2f}')
 
 
 if __name__ == '__main__':
+    os.makedirs('saved_model', exist_ok = True) 
     for cycle in range(5):
         train(cycle)

@@ -7,7 +7,6 @@ import logging
 import uuid
 import sys
 import dgl
-import dgl.function as fn
 from ogb.nodeproppred import DglNodePropPredDataset, Evaluator
 
 import numpy as np
@@ -16,7 +15,6 @@ import torch.nn.functional as F
 import torch.optim as optim
 
 from loss import loss_kd_only
-
 from model_drgat import DRGAT
 
 epsilon = 1 - math.log(2)
@@ -331,7 +329,8 @@ def main():
     argparser.add_argument("--mode", type=str, default='teacher', help="kd mode [teacher, student]")
     argparser.add_argument("--alpha", type=float, default=0.5, help="ratio of kd loss")
     argparser.add_argument("--temp", type=float, default=1.0, help="temperature of kd")
-    argparser.add_argument("--pretrain_path", type=str, default='None', help="path for pretrained node features")
+    argparser.add_argument("--pretrain_path", type=str, default='../dataset/ogbn-arxiv-pretrain/X.all.xrt-emb.npy',
+        help="path for pretrained node features")
     args = argparser.parse_args()
 
     # Adjust kd_dir here
@@ -340,6 +339,9 @@ def main():
     args.save = 'log/{}-{}-{}'.format(args.save, time.strftime("%Y%m%d-%H%M%S"), str(uuid.uuid4()))
     if not os.path.exists(args.save):
         os.makedirs(args.save)
+    if not os.path.exists('saved_model'):
+        os.makedirs('saved_model')
+    
     log_format = '%(asctime)s %(message)s'
     logging.basicConfig(stream=sys.stdout,
                         level=logging.INFO,

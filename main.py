@@ -13,7 +13,7 @@ from load import load_model, load_dataset, load_default_args
 from baseline import node_mask, gnn_predict
 
 
-argparser = argparse.ArgumentParser("Bias Detection", formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+argparser = argparse.ArgumentParser("NORA", formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 argparser.add_argument("--dataset", type=str, default="Cora", choices=['Cora', 'CiteSeer', 
     'PubMed', 'ogbn-arxiv', 'P50', 'P_20_50'])
 argparser.add_argument('--model', type=str, default='GCN', choices=['GCN', 'GraphSAGE', 'GAT', 

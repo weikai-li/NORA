@@ -1,5 +1,8 @@
 saved_model
-data
-data_dgl
-dataset
+planetoid/data
+planetoid/data_dgl
+arxiv/dataset/ogbn_arxiv/*
+arxiv/dataset/ogbn-arxiv-pretrain/*
 __pycache__
+kd
+log

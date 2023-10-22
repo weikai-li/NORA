@@ -2,12 +2,9 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 from torch_geometric.data import Data
-from torch_geometric.utils import degree
 from torch_geometric.nn import GCN, GAT
 import argparse
 from tqdm import tqdm
-import copy
-import time
 import dgl
 import dgl.function as fn
 from load import load_model

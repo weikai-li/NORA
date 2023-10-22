@@ -9,7 +9,7 @@ import argparse
 import os
 
 from utils import multi_relation_load, save_node_pred, save_link_pred, cycle_data_split
-from model.model import Classification, LinkPrediction, TIMME, TIMMEhierarchical, TIMMEsingle
+from model.model import Classification, LinkPrediction, TIMME
 from model.embedding import PartlyLearnableEmbedding, FixedFeature
 from task import ClassificationTask, LinkPred_BatchTask, TIMMEManager
 
@@ -47,7 +47,7 @@ parser.add_argument('-d','--data', type=str, default='PureP',
                     help='Dataset to use. (default: PureP)')
 parser.add_argument('-r', '--relations', type=str, default=['retweet_list.csv', 'mention_list.csv', 'friend_list.csv', 'reply_list.csv', 'favorite_list.csv'], action='append',
                     help='Relations to use. (default: [\'retweet_list.csv\', \'mention_list.csv\', \'friend_list.csv\', \'reply_list.csv\', \'favorite_list.csv\'])')
-parser.add_argument('-t', '--task', type=str, default="TIMME", choices=["Classification", "LinkPrediction", "TIMME_SingleLink", "TIMME", "TIMME_hierarchical"],
+parser.add_argument('-t', '--task', type=str, default="TIMME", choices=["Classification", "LinkPrediction", "TIMME"],
                     help='The type of task to run with (default: Classification)')
 parser.add_argument('--skip_mode', type=str, default="add", choices=["none", "add", "concat"],
                     help='Not using skip connection, using skip-connection by adding the layers layer output, or skip-connection by conactenate layers. (default: add; but not much difference if we disable it)')
@@ -163,19 +163,6 @@ elif args.task == "LinkPrediction":
             skip_mode=args.skip_mode,
             attention_mode=args.attention_mode,
             trainable_features=trainable)
-elif args.task == "TIMME_hierarchical":
-    model = TIMMEhierarchical(num_relations,
-            num_entities,
-            num_adjs,
-            feature_dimension,
-            hidden_size,
-            num_classes,
-            args.dropout,
-            relations,
-            regularization=args.regularization,
-            skip_mode=args.skip_mode,
-            attention_mode=args.attention_mode,
-            trainable_features=trainable)
 elif args.task == "TIMME":
     model = TIMME(num_relations,
             num_entities,
@@ -189,20 +176,6 @@ elif args.task == "TIMME":
             skip_mode=args.skip_mode,
             attention_mode=args.attention_mode,
             trainable_features=trainable)
-elif args.task == "TIMME_SingleLink":
-    model = TIMMEsingle(num_relations,
-            num_entities,
-            num_adjs,
-            feature_dimension,
-            hidden_size,
-            num_classes,
-            args.dropout,
-            relations,
-            regularization=args.regularization,
-            skip_mode=args.skip_mode,
-            attention_mode=args.attention_mode,
-            trainable_features=trainable,
-            relation_id=args.single_relation)
 else:
     print("Fatal Error: Task {} not implemented yet".format(args.task))
     exit(0)

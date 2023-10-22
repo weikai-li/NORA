@@ -3,16 +3,14 @@ import torch
 import torch.nn.functional as F
 from torch_geometric.datasets import Planetoid
 import torch_geometric.transforms as T
-from torch_geometric.data import Data
-from torch_geometric.utils import degree
-from models import MyGCN, MyGraphSAGE, MyGAT
+from models import MyGCN
 import argparse
 from best_config import config
-import copy
+import os
 
 argparser = argparse.ArgumentParser("Bias Detection", formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-argparser.add_argument("--dataset", type=str, default="Cora", choices=['Cora', 'CiteSeer', 'PubMed', 'ogbn-arxiv'])
-argparser.add_argument('--model', type=str, default='GCN', choices=['GCN', 'GraphSAGE', 'GAT', 'DrGAT'])
+argparser.add_argument("--dataset", type=str, default="Cora", choices=['Cora', 'CiteSeer', 'PubMed'])
+argparser.add_argument("--model", type=str, default="GCN", choices=['GCN'])
 argparser.add_argument('--n_layers', type=int, default=0, help="0: use default")
 argparser.add_argument('--hidden_size', type=int, default=128, help="0: use default")
 argparser.add_argument('--lr', type=float, default=1e-3)
@@ -30,14 +28,9 @@ if args.n_layers == 0:
     args.n_layers = config['n_layers']
 if args.hidden_size == 0:
     args.hidden_size = config['hidden_size']
+args.lr = config['lr']
 if args.model == 'GCN':
     model = MyGCN(in_channels=num_features, out_channels=args.hidden_size, hidden_channels=args.hidden_size, 
-        num_layers=args.n_layers, dropout=config['dropout'])
-elif args.model == 'GraphSAGE':
-    model = MyGraphSAGE(in_channels=num_features, out_channels=args.hidden_size, hidden_channels=args.hidden_size, 
-        num_layers=args.n_layers, dropout=config['dropout'])
-elif args.model == 'GAT':
-    model = MyGAT(in_channels=num_features, out_channels=args.hidden_size, hidden_channels=args.hidden_size, 
         num_layers=args.n_layers, dropout=config['dropout'])
 model = model.to(device)
 
@@ -73,8 +66,8 @@ def train(cycle):
         neg_link = np.load(f'data/{args.dataset}/processed/{cycle}_neg_link.npy')
     except:
         edge_index = edge_index.cpu().numpy()
-        neg_idx1 = np.random.randint(0, len(data.x)-1, 3 * test_mask.sum())
-        neg_idx2 = np.random.randint(0, len(data.x)-1, 3 * test_mask.sum())
+        neg_idx1 = np.random.randint(0, len(data.x)-1, 3 * test_mask.sum().item())
+        neg_idx2 = np.random.randint(0, len(data.x)-1, 3 * test_mask.sum().item())
         unequal_mask = (neg_idx1 != neg_idx2)
         neg_idx1 = list(neg_idx1[unequal_mask])
         neg_idx2 = list(neg_idx2[unequal_mask])
@@ -131,11 +124,13 @@ def train(cycle):
             correct = (pred == labels).sum()
             acc = int(correct) / (len(val_link[0]) + len(val_neg[0]))
             if acc > best_acc:
-                print(epoch, acc)
                 best_acc = acc
                 torch.save(model.state_dict(), f'saved_model/{args.dataset}_{args.model}-edge_{args.n_layers}_{args.hidden_size}_{cycle}.pkl')
+        if epoch % 10 == 9:
+            print(f'Epoche: {epoch + 1}, Loss: {loss:.4f}, Valid acc: {100*acc:.2f}, Best Valid acc: {100*best_acc:.2f}')
 
 
 if __name__ == '__main__':
+    os.makedirs('saved_model', exist_ok = True) 
     for cycle in range(5):
         train(cycle)
