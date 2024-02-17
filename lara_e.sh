@@ -35,6 +35,10 @@ python main.py --method lara-e-gcn --model GraphSAGE --dataset CiteSeer --lr 5e-
 python evaluate.py --method lara-e-gcn --model GraphSAGE --dataset CiteSeer
 python main.py --method lara-e-gcn --model GAT --dataset CiteSeer --lr 5e-4 --n_epochs 100 --pred_hidden 64 --pred_n_layers 2 --pred_dropout 0.5
 python evaluate.py --method lara-e-gcn --model GAT --dataset CiteSeer
+python main.py --method lara-e-gcn --model GraphSAGE --dataset PubMed --lr 5e-4 --n_epochs 100 --pred_hidden 64 --pred_n_layers 2 --pred_dropout 0.5
+python evaluate.py --method lara-e-gcn --model GraphSAGE --dataset PubMed
+python main.py --method lara-e-gcn --model GAT --dataset PubMed --lr 5e-4 --n_epochs 100 --pred_hidden 64 --pred_n_layers 2 --pred_dropout 0.5
+python evaluate.py --method lara-e-gcn --model GAT --dataset PubMed
 
 # Node classification - Other models on ogbn-arxiv
 python main.py --method lara-e-gcn --model GraphSAGE --dataset ogbn-arxiv --lr 5e-4 --n_epochs 100 --pred_hidden 64 --pred_n_layers 2 --pred_dropout 0.5

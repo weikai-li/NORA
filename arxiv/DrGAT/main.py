@@ -37,7 +37,7 @@ def seed(seed=0):
 def load_data(dataset, args):
     global n_node_feats, n_classes
 
-    data = DglNodePropPredDataset(name=dataset, root='../dataset')
+    data = DglNodePropPredDataset(name=dataset, root='../data')
 
     evaluator = Evaluator(name=dataset)
 
@@ -329,7 +329,7 @@ def main():
     argparser.add_argument("--mode", type=str, default='teacher', help="kd mode [teacher, student]")
     argparser.add_argument("--alpha", type=float, default=0.5, help="ratio of kd loss")
     argparser.add_argument("--temp", type=float, default=1.0, help="temperature of kd")
-    argparser.add_argument("--pretrain_path", type=str, default='../dataset/ogbn-arxiv-pretrain/X.all.xrt-emb.npy',
+    argparser.add_argument("--pretrain_path", type=str, default='../data/ogbn-arxiv-pretrain/X.all.xrt-emb.npy',
         help="path for pretrained node features")
     args = argparser.parse_args()
 

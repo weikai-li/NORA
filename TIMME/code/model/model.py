@@ -58,6 +58,7 @@ class Classification(nn.Module):
         self.trainable_features = trainable_features if trainable_features else None
 
     def forward(self, x, adjs, calc_gcn=True):
+        assert calc_gcn == False
         x = self.gcn(x, adjs) if calc_gcn else x
         x = self.classifier(x)
         x = F.log_softmax(x, dim=1)
@@ -123,6 +124,7 @@ class LinkPrediction(nn.Module):
         '''
         forward without calculating loss
         '''
+        assert calc_gcn == False
         embeddings = self.gcn(x, adjs) if calc_gcn else x
         if self.additional_layer:
             embeddings = self.additional_layer(embeddings)

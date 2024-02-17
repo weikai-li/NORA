@@ -1,131 +1,140 @@
-config = {
-    'GCN-edge':{
-        'Cora':{
-            'lr': 1e-2,
-            'wd': 1e-4,
-            'n_layers': 2,
-            'data_transform': True,
-            'hidden_size': 128,
-            'dropout': 0.6,
-            'n_epochs': 200,
-            'patience': 20
-        },
-        'CiteSeer':{
-            'lr': 1e-2,
-            'wd': 3e-4,
-            'n_layers': 2,
-            'data_transform': True,
-            'hidden_size': 128,
-            'dropout': 0.5,
-            'n_epochs': 200,
-            'patience': 50
-        },
-        'PubMed':{
-            'lr': 1e-2,
-            'wd': 2e-4,
-            'n_layers': 2,
-            'data_transform': True,
-            'hidden_size': 128,
-            'dropout': 0.5,
-            'n_epochs': 200,
-            'patience': 20
-        }
-    },
+planetoid_config = {
     'GCN':{
         'Cora':{
             'lr': 1e-2,
-            'wd': 1e-4,
-            'n_layers': 2,
-            'data_transform': True,
+            'wd': 1e-5,
+            'num_layers': 2,
             'hidden_size': 1024,
-            'dropout': 0.6,
-            'n_epochs': 50,
-            'patience': 20
+            'dropout': 0.5
         },
         'CiteSeer':{
             'lr': 1e-2,
-            'wd': 3e-4,
-            'n_layers': 2,
-            'data_transform': True,
+            'wd': 1e-5,
+            'num_layers': 2,
             'hidden_size': 1024,
-            'dropout': 0.5,
-            'n_epochs': 200,
-            'patience': 50
+            'dropout': 0.5
         },
         'PubMed':{
             'lr': 1e-2,
-            'wd': 2e-4,
-            'n_layers': 2,
-            'data_transform': True,
-            'hidden_size': 1024,
-            'dropout': 0.5,
-            'n_epochs': 50,
-            'patience': 20
+            'wd': 1e-5,
+            'num_layers': 2,
+            'hidden_size': 512,
+            'dropout': 0.5
         }
     },
     'GraphSAGE':{
         'Cora':{
             'lr': 1e-2,
-            'wd': 1e-4,
-            'n_layers': 2,
-            'data_transform': True,
-            'hidden_size': 256,
-            'dropout': 0.9,
-            'n_epochs': 100,
-            'patience': 50
+            'wd': 0,
+            'num_layers': 2,
+            'hidden_size': 512,
+            'dropout': 0.5
         },
         'CiteSeer':{
-            'lr': 1e-2,
-            'wd': 1e-4,
-            'n_layers': 2,
-            'data_transform': True,
-            'hidden_size': 128,
-            'dropout': 0.9,
-            'n_epochs': 100,
-            'patience': 50
+            'lr': 5e-3,
+            'wd': 1e-5,
+            'num_layers': 2,
+            'hidden_size': 512,
+            'dropout': 0.5
         },
         'PubMed':{
             'lr': 1e-2,
             'wd': 1e-4,
-            'n_layers': 2,
-            'data_transform': True,
-            'hidden_size': 256,
-            'dropout': 0.5,
-            'n_epochs': 150,
-            'patience': 70
+            'num_layers': 2,
+            'hidden_size': 512,
+            'dropout': 0.5
         }
     },
     'GAT':{
         'Cora':{
             'lr': 1e-2,
-            'wd': 3e-5,
-            'n_layers': 2,
-            'data_transform': True,
-            'hidden_size': 1024,
-            'dropout': 0.5,
-            'n_epochs': 200,
-            'patience': 100
+            'wd': 1e-5,
+            'num_layers': 2,
+            'hidden_size': 512,
+            'dropout': 0.5
         },
         'CiteSeer':{
             'lr': 1e-2,
-            'wd': 1e-4,
-            'n_layers': 2,
-            'data_transform': True,
-            'hidden_size': 256,
-            'dropout': 0.5,
-            'n_epochs': 150,
-            'patience': 70
+            'wd': 1e-5,
+            'num_layers': 2,
+            'hidden_size': 512,
+            'dropout': 0.5
         },
         'PubMed':{
-            'lr': 3e-3,
-            'wd': 4e-4,
-            'n_layers': 2,
-            'data_transform': True,
-            'hidden_size': 1024,
-            'dropout': 0.3,
-            'n_epochs': 150,
-            'patience': 70
+            'lr': 1e-2,
+            'wd': 1e-5,
+            'num_layers': 2,
+            'hidden_size': 512,
+            'dropout': 0.5
         }
-    }
+    },
+    'GCN_edge':{
+        'Cora':{
+            'lr': 1e-3,
+            'wd': 1e-5,
+            'num_layers': 2,
+            'hidden_size': 2048,
+            'dropout': 0.7
+        },
+        'CiteSeer':{
+            'lr': 1e-3,
+            'wd': 1e-5,
+            'num_layers': 2,
+            'hidden_size': 2048,
+            'dropout': 0.7
+        },
+        'PubMed':{
+            'lr': 1e-3,
+            'wd': 1e-5,
+            'num_layers': 2,
+            'hidden_size': 1024,
+            'dropout': 0.7
+        }
+    },
+    'GraphSAGE_edge':{
+        'Cora':{
+            'lr': 1e-3,
+            'wd': 1e-5,
+            'num_layers': 2,
+            'hidden_size': 512,
+            'dropout': 0.9
+        },
+        'CiteSeer':{
+            'lr': 1e-3,
+            'wd': 1e-5,
+            'num_layers': 2,
+            'hidden_size': 512,
+            'dropout': 0.9
+        },
+        'PubMed':{
+            'lr': 1e-3,
+            'wd': 1e-5,
+            'num_layers': 2,
+            'hidden_size': 1024,
+            'dropout': 0.9
+        }
+    },
+    'GAT_edge':{
+        'Cora':{
+            'lr': 1e-3,
+            'wd': 1e-5,
+            'num_layers': 2,
+            'hidden_size': 2048,
+            'dropout': 0.9
+        },
+        'CiteSeer':{
+            'lr': 1e-3,
+            'wd': 1e-5,
+            'num_layers': 2,
+            'hidden_size': 2048,
+            'dropout': 0.9
+        },
+        'PubMed':{
+            'lr': 1e-3,
+            'wd': 1e-5,
+            'num_layers': 2,
+            'hidden_size': 1024,
+            'dropout': 0.5
+        }
+    },
 }
-

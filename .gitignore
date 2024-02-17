@@ -1,8 +1,10 @@
 saved_model
 planetoid/data
-planetoid/data_dgl
-arxiv/dataset/ogbn_arxiv/*
-arxiv/dataset/ogbn-arxiv-pretrain/*
+arxiv/data/ogbn_arxiv/*
+arxiv/data/ogbn-arxiv-pretrain/*
+TIMME/data
 __pycache__
 kd
 log
+save
+save_grad

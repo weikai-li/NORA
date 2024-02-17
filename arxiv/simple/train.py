@@ -1,286 +1,28 @@
 import argparse
+import numpy as np
 import torch
 import torch.nn.functional as F
 from ogb.nodeproppred import DglNodePropPredDataset, Evaluator
 import dgl
-import dgl.function as fn
-from dgl.nn import GraphConv, SAGEConv
-from dgl.utils import expand_as_pair
+import copy
+from sklearn.metrics import roc_auc_score
 import os
+import sys
+from os import path
+sys.path.append(path.abspath('../../planetoid'))
+try:
+    from models import MyGCN, MyGraphSAGE, MyGAT
+except:
+    from planetoid.models import MyGCN, MyGraphSAGE, MyGAT
 
 
-class MyGCNConv(GraphConv):
-    def forward(self, graph, feat, weight=None, edge_weight=None, node_weight=None):
-        with graph.local_scope():
-            if not self._allow_zero_in_degree:
-                if (graph.in_degrees() == 0).any():
-                    raise DGLError(
-                        "There are 0-in-degree nodes in the graph, "
-                        "output for those nodes will be invalid. "
-                        "This is harmful for some applications, "
-                        "causing silent performance regression. "
-                        "Adding self-loop on the input graph by "
-                        "calling `g = dgl.add_self_loop(g)` will resolve "
-                        "the issue. Setting ``allow_zero_in_degree`` "
-                        "to be `True` when constructing this module will "
-                        "suppress the check and let the code run."
-                    )
-            aggregate_fn = fn.copy_u("h", "m")
-            if edge_weight is not None:
-                assert edge_weight.shape[0] == graph.num_edges()
-                graph.edata["_edge_weight"] = edge_weight
-                aggregate_fn = fn.u_mul_e("h", "_edge_weight", "m")
-
-            # (BarclayII) For RGCN on heterogeneous graphs we need to support GCN on bipartite.
-            feat_src, feat_dst = expand_as_pair(feat, graph)
-            if self._norm in ["left", "both"]:
-                degs = graph.out_degrees().to(feat_src).clamp(min=1)
-                if self._norm == "both":
-                    norm = torch.pow(degs, -0.5)
-                else:
-                    norm = 1.0 / degs
-                shp = norm.shape + (1,) * (feat_src.dim() - 1)
-                norm = torch.reshape(norm, shp)
-                feat_src = feat_src * norm
-
-            if weight is not None:
-                if self.weight is not None:
-                    raise DGLError(
-                        "External weight is provided while at the same time the"
-                        " module has defined its own weight parameter. Please"
-                        " create the module with flag weight=False."
-                    )
-            else:
-                weight = self.weight
-            if node_weight is not None:
-                feat_src = feat_src * node_weight
-
-            if self._in_feats > self._out_feats:
-                # mult W first to reduce the feature size for aggregation.
-                if weight is not None:
-                    feat_src = torch.matmul(feat_src, weight)
-                graph.srcdata["h"] = feat_src
-                graph.update_all(aggregate_fn, fn.sum(msg="m", out="h"))
-                rst = graph.dstdata["h"]
-            else:
-                # aggregate first then mult W
-                graph.srcdata["h"] = feat_src
-                graph.update_all(aggregate_fn, fn.sum(msg="m", out="h"))
-                rst = graph.dstdata["h"]
-                if weight is not None:
-                    rst = torch.matmul(rst, weight)
-
-            if self._norm in ["right", "both"]:
-                degs = graph.in_degrees().to(feat_dst).clamp(min=1)
-                if self._norm == "both":
-                    norm = torch.pow(degs, -0.5)
-                else:
-                    norm = 1.0 / degs
-                shp = norm.shape + (1,) * (feat_dst.dim() - 1)
-                norm = torch.reshape(norm, shp)
-                rst = rst * norm
-
-            if self.bias is not None:
-                rst = rst + self.bias
-
-            if self._activation is not None:
-                rst = self._activation(rst)
-
-            return rst
-
-
-class MySAGEConv(SAGEConv):
-    def forward(self, graph, feat, edge_weight=None, node_weight=None):
-        with graph.local_scope():
-            if isinstance(feat, tuple):
-                feat_src = self.feat_drop(feat[0])
-                feat_dst = self.feat_drop(feat[1])
-            else:
-                feat_src = feat_dst = self.feat_drop(feat)
-                if graph.is_block:
-                    feat_dst = feat_src[: graph.number_of_dst_nodes()]
-            msg_fn = fn.copy_u("h", "m")
-            if edge_weight is not None:
-                assert edge_weight.shape[0] == graph.num_edges()
-                graph.edata["_edge_weight"] = edge_weight
-                msg_fn = fn.u_mul_e("h", "_edge_weight", "m")
-
-            h_self = feat_dst
-
-            # Handle the case of graphs without edges
-            if graph.num_edges() == 0:
-                graph.dstdata["neigh"] = torch.zeros(
-                    feat_dst.shape[0], self._in_src_feats
-                ).to(feat_dst)
-
-            # Determine whether to apply linear transformation before message passing A(XW)
-            lin_before_mp = self._in_src_feats > self._out_feats
-
-            # Message Passing
-            assert self._aggre_type == "mean"
-            if lin_before_mp:
-                feat_src = self.fc_neigh(feat_src)
-            if node_weight is not None:
-                feat_src = feat_src * node_weight
-            graph.srcdata["h"] = feat_src
-            graph.update_all(msg_fn, fn.mean("m", "neigh"))
-            h_neigh = graph.dstdata["neigh"]
-            if not lin_before_mp:
-                h_neigh = self.fc_neigh(h_neigh)
-            
-            rst = self.fc_self(h_self) + h_neigh
-
-            # activation
-            if self.activation is not None:
-                rst = self.activation(rst)
-            # normalization
-            if self.norm is not None:
-                rst = self.norm(rst)
-            return rst
-
-
-class GCN_arxiv(torch.nn.Module):
-    def __init__(self, in_channels, hidden_channels, out_channels, num_layers,
-                 dropout):
-        super(GCN_arxiv, self).__init__()
-        self.convs = torch.nn.ModuleList()
-        self.convs.append(MyGCNConv(in_channels, hidden_channels))
-        self.bns = torch.nn.ModuleList()
-        self.bns.append(torch.nn.BatchNorm1d(hidden_channels))
-        for _ in range(num_layers - 2):
-            self.convs.append(MyGCNConv(hidden_channels, hidden_channels))
-            self.bns.append(torch.nn.BatchNorm1d(hidden_channels))
-        self.convs.append(MyGCNConv(hidden_channels, out_channels))
-        self.dropout = dropout
-
-    def reset_parameters(self):
-        for conv in self.convs:
-            conv.reset_parameters()
-        for bn in self.bns:
-            bn.reset_parameters()
-
-    def forward(self, graph, x, return_hidden=False, edge_weight=None, node_weight=None):
-        xs = []
-        for i, conv in enumerate(self.convs[:-1]):
-            xs.append(x)
-            x = conv(graph, x, edge_weight=edge_weight, node_weight=node_weight)
-            x = self.bns[i](x)
-            x = F.relu(x)
-            x = F.dropout(x, p=self.dropout, training=self.training)
-        xs.append(x)
-        x = self.convs[-1](graph, x, edge_weight=edge_weight, node_weight=node_weight)
-        xs.append(x)
-        if return_hidden:
-            return x.log_softmax(dim=-1), xs
-        else:
-            return x.log_softmax(dim=-1)
-
-
-class GraphSAGE_arxiv(torch.nn.Module):
-    def __init__(self, in_channels, hidden_channels, out_channels, num_layers,
-                 dropout):
-        super(GraphSAGE_arxiv, self).__init__()
-        self.convs = torch.nn.ModuleList()
-        self.convs.append(MySAGEConv(in_channels, hidden_channels, aggregator_type='mean'))
-        self.bns = torch.nn.ModuleList()
-        self.bns.append(torch.nn.BatchNorm1d(hidden_channels))
-        for _ in range(num_layers - 2):
-            self.convs.append(MySAGEConv(hidden_channels, hidden_channels, aggregator_type='mean'))
-            self.bns.append(torch.nn.BatchNorm1d(hidden_channels))
-        self.convs.append(MySAGEConv(hidden_channels, out_channels, aggregator_type='mean'))
-        self.dropout = dropout
-
-    def reset_parameters(self):
-        for conv in self.convs:
-            conv.reset_parameters()
-        for bn in self.bns:
-            bn.reset_parameters()
-
-    def forward(self, graph, x, return_hidden=False, edge_weight=None, node_weight=None):
-        xs = []
-        for i, conv in enumerate(self.convs[:-1]):
-            xs.append(x)
-            x = conv(graph, x, edge_weight=edge_weight, node_weight=node_weight)
-            x = self.bns[i](x)
-            x = F.relu(x)
-            x = F.dropout(x, p=self.dropout, training=self.training)
-        xs.append(x)
-        x = self.convs[-1](graph, x, edge_weight=edge_weight, node_weight=node_weight)
-        xs.append(x)
-        if return_hidden:
-            return x.log_softmax(dim=-1), xs
-        else:
-            return x.log_softmax(dim=-1)
-
-
-def train(model, graph, labels, train_idx, optimizer):
-    model.train()
-    optimizer.zero_grad()
-    out = model(graph, graph.ndata['feat'])
-    loss = F.nll_loss(out[train_idx], labels.squeeze(1)[train_idx])
-    loss.backward()
-    optimizer.step()
-    return loss.item()
-
-
-@torch.no_grad()
-def test(model, graph, labels, evaluator, train_idx, val_idx, test_idx):
-    model.eval()
-
-    out = model(graph, graph.ndata['feat'])
-    y_pred = out.argmax(dim=-1, keepdim=True)
-
-    train_acc = evaluator.eval({
-        'y_true': labels[train_idx],
-        'y_pred': y_pred[train_idx],
-    })['acc']
-    valid_acc = evaluator.eval({
-        'y_true': labels[val_idx],
-        'y_pred': y_pred[val_idx],
-    })['acc']
-    test_acc = evaluator.eval({
-        'y_true': labels[test_idx],
-        'y_pred': y_pred[test_idx],
-    })['acc']
-
-    return train_acc, valid_acc, test_acc
-
-
-def main(cycle):
-    parser = argparse.ArgumentParser(description='OGBN-Arxiv (GNN)')
-    parser.add_argument('--device', type=int, default=0)
-    parser.add_argument('--log_steps', type=int, default=20)
-    parser.add_argument('--model', type=str, default='GCN', choices=['GCN', 'GraphSAGE', 'GAT'])
-    parser.add_argument('--num_layers', type=int, default=3)
-    parser.add_argument('--hidden_channels', type=int, default=256)
-    parser.add_argument('--dropout', type=float, default=0.5)
-    parser.add_argument('--lr', type=float, default=0.01)
-    parser.add_argument('--epochs', type=int, default=300)
-    parser.add_argument('--runs', type=int, default=1)
-    args = parser.parse_args()
-    print(args)
-
-    device = f'cuda:{args.device}' if torch.cuda.is_available() else 'cpu'
-    device = torch.device(device)
-
-    data = DglNodePropPredDataset(name="ogbn-arxiv", root='../dataset')
-    graph, labels = data[0]
+def cycle_node_split(data, cycle):
     splitted_idx = data.get_idx_split()
     train_idx, val_idx, test_idx = splitted_idx["train"], splitted_idx["valid"], splitted_idx["test"]
-    feat = graph.ndata['feat']  
-    graph = dgl.to_bidirected(graph)
-    graph.ndata['feat'] = feat
-    graph = graph.remove_self_loop().add_self_loop()       # add self-loop
-    graph.create_formats_()                                # create sparse matrics for all possible matrics
-    graph, labels, train_idx, val_idx, test_idx = map(
-        lambda x: x.to(device), (graph, labels, train_idx, val_idx, test_idx)
-    )
-
     all_idx = torch.cat([train_idx, val_idx, test_idx])
-    offset = len(all_idx) * (cycle) / 5
-    offset = int(offset)
+    offset = round(len(all_idx) * (cycle) / 5)
     train_idx1 = all_idx[offset: min(len(train_idx)+offset, len(all_idx))]
-    train_idx2 = all_idx[max(0, offset-len(all_idx)): max(0, len(train_idx)+offset-len(all_idx))]
+    train_idx2 = all_idx[0: max(0, len(train_idx)+offset-len(all_idx))]
     assert len(train_idx1) + len(train_idx2) == len(train_idx)
     train_idx = torch.cat([train_idx1, train_idx2])
     val_idx1 = all_idx[min(len(train_idx)+offset, len(all_idx)): min(len(train_idx)+len(val_idx)+offset, len(all_idx))]
@@ -291,7 +33,7 @@ def main(cycle):
     test_idx2 = all_idx[max(0, offset-len(test_idx)): max(0, offset)]
     assert len(test_idx1) + len(test_idx2) == len(test_idx)
     test_idx = torch.cat([test_idx1, test_idx2])
-
+    graph, labels = data[0]
     assert len(train_idx) + len(val_idx) + len(test_idx) == graph.num_nodes()
     train_set = set([i.item() for i in train_idx])
     val_set = set([i.item() for i in val_idx])
@@ -302,48 +44,239 @@ def main(cycle):
     assert len(train_set & val_set) == 0
     assert len(train_set & test_set) == 0
     assert len(val_set & test_set) == 0
+    return train_idx, val_idx, test_idx
 
+
+# Link prediction, train:val:test = 80%:10%:10%. Positive:negative=1:1.
+def cycle_edge_split(g, cycle, args):
+    edge_index = [g.edges()[0], g.edges()[1]]
+    edge_index = torch.stack(edge_index)
+    mask = (edge_index[1] >= edge_index[0])
+    edge_index = edge_index[:, mask]
+    num_edge = edge_index.shape[1]
+
+    train_mask = torch.zeros(num_edge, dtype=bool)
+    val_mask = torch.zeros(num_edge, dtype=bool)
+    test_mask = torch.zeros(num_edge, dtype=bool)
+    num_train = round(0.8 * num_edge)
+    num_val = round(0.1 * num_edge)
+    num_test = num_edge - num_train - num_val
+    offset = round(cycle / 5 * num_edge)
+    train_mask[offset: min(offset+num_train, num_edge)] = True
+    train_mask[0: max(0, num_train+offset-num_edge)] = True
+    val_mask[min(num_train+offset, num_edge): min(num_train+num_val+offset, num_edge)] = True
+    val_mask[max(0, num_train+offset-num_edge): max(0, num_train+num_val+offset-num_edge)] = True
+    test_mask[min(num_train+num_val+offset, num_edge): num_edge] = True
+    test_mask[max(0, offset-num_test): max(0, offset)] = True
+    assert (train_mask.sum() + val_mask.sum() + test_mask.sum()) == num_edge
+    assert (train_mask & val_mask).sum() == 0
+    assert (val_mask & test_mask).sum() == 0
+    assert (train_mask & test_mask).sum() == 0
+    train_link = edge_index[:, train_mask].clone().detach()
+    val_link = edge_index[:, val_mask].clone().detach()
+    test_link = edge_index[:, test_mask].clone().detach()
+
+    num_node = g.num_nodes()
+    try:
+        train_neg = np.load(f'../data/ogbn_arxiv/processed/{cycle}_train_neg_link.npy')
+        val_neg = np.load(f'../data/ogbn_arxiv/processed/{cycle}_val_neg_link.npy')
+        test_neg = np.load(f'../data/ogbn_arxiv/processed/{cycle}_neg_link.npy')
+        train_neg = torch.tensor(train_neg)
+        val_neg = torch.tensor(val_neg)
+        test_neg = torch.tensor(test_neg)
+    except:
+        edge_index = np.array(edge_index)
+        neg_idx1 = np.random.randint(0, num_node, size=round(1.1 * num_edge))
+        neg_idx2 = np.random.randint(0, num_node, size=round(1.1 * num_edge))
+        unequal_mask = (neg_idx1 != neg_idx2)
+        neg_idx1 = list(neg_idx1[unequal_mask])
+        neg_idx2 = list(neg_idx2[unequal_mask])
+        neg_link_list = []
+        link_dict = {}
+        for i in range(num_node):
+            link_dict[i] = []
+        for i in range(num_edge):
+            link_dict[edge_index[0, i]].append(edge_index[1, i])
+            link_dict[edge_index[1, i]].append(edge_index[0, i])
+        cnt = 0
+        for i in range(len(neg_idx1)):
+            if (neg_idx2[i] not in link_dict[neg_idx1[i]]) and (neg_idx1[i] not in link_dict[neg_idx2[i]]):
+                link_dict[neg_idx1[i]].append(neg_idx2[i])
+                link_dict[neg_idx2[i]].append(neg_idx1[i])
+                neg_link_list.append([neg_idx1[i], neg_idx2[i]])
+                cnt += 1
+                if cnt == num_edge:
+                    break
+        neg_link = torch.tensor(neg_link_list).T
+        train_neg = neg_link[:, : num_train]
+        val_neg = neg_link[:, num_train: num_train + num_val]
+        test_neg = neg_link[:, num_train + num_val:]
+        assert test_neg.shape[1] == num_test
+        np.save(f'../data/ogbn_arxiv/processed/{cycle}_train_neg_link.npy', train_neg)
+        np.save(f'../data/ogbn_arxiv/processed/{cycle}_val_neg_link.npy', val_neg)
+        np.save(f'../data/ogbn_arxiv/processed/{cycle}_neg_link.npy', test_neg)
+    return train_link, val_link, test_link, train_neg, val_neg, test_neg
+
+
+def load_dataset(data_dir='../data'):
+    data = DglNodePropPredDataset(name="ogbn-arxiv", root=data_dir)
+    return data
+
+
+def load_model(args, graph):
     if args.model == 'GCN':
-        model = GCN_arxiv(graph.ndata["feat"].shape[1], args.hidden_channels,
-                    40, args.num_layers, args.dropout).to(device)
+        model = MyGCN(graph.ndata["feat"].shape[1], args.hidden_size,
+                    40, args.num_layers, args.dropout, arxiv_data=True)
     elif args.model == 'GraphSAGE':
-        model = GraphSAGE_arxiv(graph.ndata["feat"].shape[1], args.hidden_channels,
-                     40, args.num_layers, args.dropout).to(device)
+        model = MyGraphSAGE(graph.ndata["feat"].shape[1], args.hidden_size,
+                     40, args.num_layers, args.dropout, arxiv_data=True)
     elif args.model == 'GAT':
-        model = GAT_arxiv(graph.ndata["feat"].shape[1], args.hidden_channels,
-                     40, args.num_layers, args.dropout, num_heads=3).to(device)
+        model = MyGAT(graph.ndata["feat"].shape[1], args.hidden_size,
+                     40, args.num_layers, args.dropout, arxiv_data=True)
+    elif args.model == 'GCN_edge':
+        model = MyGCN(graph.ndata["feat"].shape[1], args.hidden_size,
+                     args.hidden_size, args.num_layers, args.dropout, arxiv_data=True)
+    elif args.model == 'GraphSAGE_edge':
+        model = MyGraphSAGE(graph.ndata["feat"].shape[1], args.hidden_size,
+                     args.hidden_size, args.num_layers, args.dropout, arxiv_data=True)
+    else:
+        assert args.model == 'GAT_edge'
+        model = MyGAT(graph.ndata["feat"].shape[1], args.hidden_size,
+                     args.hidden_size, args.num_layers, args.dropout, arxiv_data=True)
+    return model
 
+
+def train(cycle, args):
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    data = load_dataset()
+    graph, labels = data[0]
+    model = load_model(args, graph)
+    # Cycle the data split.
+    if args.link_prediction == False:
+        train_idx, val_idx, test_idx = cycle_node_split(data, cycle)
+    else:
+        train_link, val_link, test_link, train_neg, val_neg, test_neg = cycle_edge_split(graph, cycle, args)
+
+    feat = graph.ndata['feat']  
+    graph = dgl.to_bidirected(graph)
+    graph.ndata['feat'] = feat
+    graph = graph.remove_self_loop().add_self_loop()       # add self-loop
+    graph.create_formats_()                                # create sparse matrics for all possible matrics
+    if args.link_prediction == False:
+        graph, labels, train_idx, val_idx, test_idx = map(
+            lambda x: x.to(device), (graph, labels, train_idx, val_idx, test_idx)
+        )
+    else:
+        graph, labels, train_link, val_link, test_link, train_neg, val_neg, test_neg = map(
+            lambda x: x.to(device), (graph, labels, train_link, val_link, test_link, train_neg, val_neg, test_neg)
+        )
+    model = model.to(device)
     evaluator = Evaluator(name='ogbn-arxiv')
+    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
+    best_val, final_test = 0, 0
 
-    for run in range(args.runs):
-        model.reset_parameters()
-        optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
-        
-        best_val, final_test = 0, 0
-
-        for epoch in range(1, 1 + args.epochs):
-            loss = train(model, graph, labels, train_idx, optimizer)
-            train_acc, valid_acc, test_acc = test(model, graph, labels, evaluator, train_idx, val_idx, test_idx)
-
+    for epoch in range(args.num_epochs):
+        model.train()
+        if args.link_prediction == False:
+            out = model(graph, graph.ndata['feat'])
+            loss = F.cross_entropy(out[train_idx], labels.squeeze(1)[train_idx])
+            model.eval()
+            y_pred = out.argmax(dim=-1, keepdim=True)
+            valid_acc = evaluator.eval({
+                'y_true': labels[val_idx],
+                'y_pred': y_pred[val_idx],
+            })['acc']
+            test_acc = evaluator.eval({
+                'y_true': labels[test_idx],
+                'y_pred': y_pred[test_idx],
+            })['acc']
             if valid_acc > best_val:
                 best_val = valid_acc
                 final_test = test_acc
-                saved_name = f'saved_model/{cycle}_{args.model.lower()}_{args.num_layers}_{args.hidden_channels}.pkl'
-                torch.save(model.state_dict(), saved_name)
+                best_model = copy.deepcopy(model)
+        else:
+            out = model(graph, graph.ndata['feat'])
+            out_pos = out[train_link[0]] * out[train_link[1]]
+            out_pos = out_pos.sum(1)
+            out_neg = out[train_neg[0]] * out[train_neg[1]]
+            out_neg = out_neg.sum(1)
+            out_all = torch.concat([out_pos, out_neg])
+            labels = torch.concat([torch.ones_like(out_pos), torch.zeros_like(out_neg)])
+            loss = F.binary_cross_entropy_with_logits(out_all, labels)
+            with torch.no_grad():
+                model.eval()
+                val_out_pos = out[val_link[0]] * out[val_link[1]]
+                val_out_pos = val_out_pos.sum(1)
+                val_out_neg = out[val_neg[0]] * out[val_neg[1]]
+                val_out_neg = val_out_neg.sum(1)
+                val_out_all = torch.concat([val_out_pos, val_out_neg])
+                val_pred = torch.sigmoid(val_out_all)
+                val_labels = np.concatenate([np.ones(val_link.shape[1]), np.zeros(val_neg.shape[1])])
+                valid_acc = roc_auc_score(y_true=val_labels, y_score=val_pred.detach().cpu())
+                if best_val < valid_acc:
+                    best_val = valid_acc
+                    test_out_pos = out[test_link[0]] * out[test_link[1]]
+                    test_out_pos = test_out_pos.sum(1)
+                    test_out_neg = out[test_neg[0]] * out[test_neg[1]]
+                    test_out_neg = test_out_neg.sum(1)
+                    test_out_all = torch.concat([test_out_pos, test_out_neg])
+                    test_pred = torch.sigmoid(test_out_all)
+                    test_labels = np.concatenate([np.ones(test_link.shape[1]), np.zeros(test_neg.shape[1])])
+                    test_acc = roc_auc_score(y_true=test_labels, y_score=test_pred.detach().cpu())
+                    final_test = test_acc
+                    best_model = copy.deepcopy(model)
 
-            if epoch % args.log_steps == 0:
-                print(f'Cycle: {cycle}, '
-                      f'Epoch: {epoch:02d}, '
-                      f'Loss: {loss:.4f}, '
-                      f'Train: {100 * train_acc:.2f}%, '
-                      f'Valid: {100 * valid_acc:.2f}% '
-                      f'Test: {100 * test_acc:.2f}% '
-                      f'Final Test: {100 * final_test:.2f}%')
-        
-        print(f'best val: {100 * best_val:.2f}, final test: {100 * final_test:.2f}')
+        # Backward
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+        if (epoch + 1) % args.log_steps == 0:
+            print(
+                f"Epoch {epoch}, loss: {loss:.3f}, val: {valid_acc:.3f} (best {best_val:.3f}), "
+                f"test: {test_acc:.3f} (best {final_test:.3f})"
+            )
+
+    saved_name = f'./saved_model/{cycle}_{args.model.lower()}_{args.num_layers}_{args.hidden_size}.pkl'
+    torch.save(best_model.state_dict(), saved_name)
+    return best_val, final_test
 
 
-if __name__ == "__main__":
-    os.makedirs('saved_model', exist_ok=True)
+def load_config(args):
+    if args.num_layers == 0:
+        args.num_layers = 3
+    if args.hidden_size == 0:
+        args.hidden_size = 256
+    if args.dropout == 0:
+        args.dropout = 0.5
+    return args
+
+
+def main():
+    parser = argparse.ArgumentParser(description='OGBN-Arxiv')
+    parser.add_argument('--log_steps', type=int, default=20)
+    parser.add_argument('--model', type=str, default='GCN', choices=['GCN', 'GraphSAGE', 'GAT'])
+    # 0 means using the default best hyper-parameters
+    parser.add_argument('--num_layers', type=int, default=3)
+    parser.add_argument('--hidden_size', type=int, default=256)
+    parser.add_argument('--dropout', type=float, default=0.5)
+    parser.add_argument('--lr', type=float, default=0.01)
+    parser.add_argument('--num_epochs', type=int, default=300)
+    parser.add_argument('--link_prediction', action='store_true', default=False)
+    args = parser.parse_args()
+
+    if args.link_prediction == True:
+        args.model = f'{args.model}_edge'
+    args = load_config(args)
+    print(args)
+
+    val_accs, test_accs = [], []
     for cycle in range(5):
-        main(cycle)
+        val_acc, test_acc = train(cycle, args)
+        val_accs.append(val_acc)
+        test_accs.append(test_acc)
+    print(f'Average val acc/auc: {np.mean(val_accs):.4f}, test acc/auc: {np.mean(test_accs):.4f}')
+
+
+if __name__ == '__main__':
+    os.makedirs('saved_model', exist_ok=True)
+    main()
