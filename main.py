@@ -120,7 +120,7 @@ def nora(run_time, args, device, graph_ori):
         graph_ori = graph_ori[0].to(device)
     if args.dataset in ['ogbn-arxiv', 'Cora', 'CiteSeer', 'PubMed']:
         graph = graph_ori.clone()
-        deg = graph.in_degrees().float() - 1        # -1 is to delete self-loop
+        deg = graph.remove_self_loop().in_degrees().float()
         num_node = graph.num_nodes()
     else:
         assert args.dataset in ['P50', 'P_20_50']
@@ -131,7 +131,7 @@ def nora(run_time, args, device, graph_ori):
             new_deg = degree(adjs_ori[i].coalesce().indices()[0], num_nodes=num_node)
             deg = deg + new_deg
     mean_deg = deg.float().mean()
-    model.eval()   # Using the eval() model can make the results more robust
+    model.train()   # Using eval() model will disable the model to backward()
     
     save_name = f'./save_grad/{args.dataset}_{args.model}_{args.backward_choice}'
     if args.model not in ['TIMME', 'TIMME_edge']:
@@ -223,10 +223,10 @@ def nora(run_time, args, device, graph_ori):
     gradient = gradient.abs()
     deg_delta1 = 1 / torch.sqrt(deg - 1) - 1 / torch.sqrt(deg)
     deg_delta2 = 1 / (deg-1) - 1 / deg
-    deg_delta1[deg_delta1 == np.inf] = 1.0
-    deg_delta2[deg_delta2 == np.inf] = 1.0
-    assert (deg_delta1 == np.inf).sum() == 0
-    assert (deg_delta2 == np.inf).sum() == 0
+    deg_delta1[deg_delta1 == np.nan] = 1.0
+    deg_delta2[deg_delta2 == np.nan] = 1.0
+    deg_delta1[deg_delta1.abs() == np.inf] = 1.0
+    deg_delta2[deg_delta2.abs() == np.inf] = 1.0
     deg_delta = args.k1 * deg_delta1 + (1 - args.k1) * deg_delta2
     deg_inv = args.k2 / torch.sqrt(deg) + (1 - args.k2) / deg
     
@@ -259,7 +259,8 @@ def nora(run_time, args, device, graph_ori):
     graph.update_all(fn.copy_u("deg_delta", "m"), fn.sum("m", "deg_gather"))
     deg_gather = graph.ndata['deg_gather']
     gradient = gradient + args.k3 * len(hidden_list) * deg_gather
-    return list(gradient.abs().cpu())
+    gradient = gradient.abs().detach().cpu().numpy()
+    return gradient
 
 
 def main():
