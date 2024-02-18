@@ -270,6 +270,7 @@ def main():
         'DrGAT', 'TIMME', 'GCN_edge', 'GraphSAGE_edge', 'GAT_edge', 'TIMME_edge'])
     argparser.add_argument('--method', type=str, default='brute', choices=['brute',
         'nora', 'mask', 'gcn-n', 'gcn-e', 'gat-n', 'gat-e'])
+    argparser.add_argument('--cycles', type=int, nargs='+', default=[], help="[] means all")
     # Hyper-parameters for loading the original trained model
     argparser.add_argument('--triplet_batch_size', type=int, default=0, help="for method 'brute' and model 'TIMME_edge'")
     argparser.add_argument('--num_layers', type=int, default=0, help="0 means default")
@@ -300,7 +301,9 @@ def main():
     os.makedirs('save', exist_ok=True)
     bias_list = []
     start_time = time.time()
-    for run_time in range(0, 5):
+    if args.cycles == []:
+        args.cycles = [0, 1, 2, 3, 4]
+    for run_time in args.cycles:
         graph_ori = load_dataset(args, device, run_time)
         if args.method == 'nora':
             new_bias_list = nora(run_time, args, device, graph_ori)
@@ -315,6 +318,8 @@ def main():
             save_name = f'./save/{args.dataset}_{args.model}_{args.method}'
             if args.model not in ['TIMME', 'TIMME_edge']:
                 save_name += f'_{args.num_layers}_{args.hidden_size}'
+            if args.cycles != [0, 1, 2, 3, 4]:
+                save_name += f'_{run_time}'
             np.save(f'{save_name}.npy', bias_list)
             print('saving:', f'{save_name}.npy')
     time_cost = time.time() - start_time

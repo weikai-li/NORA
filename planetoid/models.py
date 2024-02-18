@@ -291,12 +291,20 @@ class MyGATConv(GATConv):
                 )
                 rst = rst + resval
             # bias
-            if self.has_explicit_bias:
-                rst = rst + self.bias.view(
-                    *((1,) * len(dst_prefix_shape)),
-                    self._num_heads,
-                    self._out_feats
-                )
+            try:
+                if self.has_explicit_bias:
+                    rst = rst + self.bias.view(
+                        *((1,) * len(dst_prefix_shape)),
+                        self._num_heads,
+                        self._out_feats
+                    )
+            except:    # Old version dgl
+                if self.bias is not None:
+                    rst = rst + self.bias.view(
+                        *((1,) * len(dst_prefix_shape)),
+                        self._num_heads,
+                        self._out_feats
+                    )
             # activation
             if self.activation:
                 rst = self.activation(rst)
