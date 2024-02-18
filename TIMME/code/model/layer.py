@@ -59,9 +59,7 @@ class GraphConvolution(Module):
         if self.bias is not None:
             self.bias.data.uniform_(-stdv, stdv)
 
-    def forward(self, input_, adjs, node_weight=None):
-        if node_weight is not None:
-            input_ = input_ * node_weight
+    def forward(self, input_, adjs):
         outputs = []
         # CUDA = adjs[0].is_cuda
         for i in range(len(self.adj_weight)):

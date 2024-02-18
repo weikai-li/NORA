@@ -37,10 +37,14 @@ class GCN_multirelation(nn.Module):
 
     def forward(self, x, adjs, return_hidden=False, node_weight=None):
         hidden_list = [x]
-        x1 = F.relu(self.gc1(x, adjs, node_weight=node_weight))
+        if node_weight is not None:
+            x = x.to_dense() * node_weight
+        x1 = F.relu(self.gc1(x, adjs))
         x1 = F.dropout(x1, self.dropout, training=self.training)
         hidden_list.append(x1)
-        x2 = F.relu(self.gc2(x1, adjs, node_weight=node_weight))
+        if node_weight is not None:
+            x1 = x1 * node_weight
+        x2 = F.relu(self.gc2(x1, adjs))
         x2 = F.dropout(x2, self.dropout, training=self.training)
         hidden_list.append(x2)
         if return_hidden:

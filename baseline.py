@@ -46,6 +46,7 @@ def node_mask(run_time, args, device, graph_ori):
 
     num_val = round(args.val_ratio * num_node)
     best_val, best_weight = 1e5, None
+    model.train()
     for epoch in tqdm(range(args.num_epochs)):
         optimizer.zero_grad()
         if args.dataset in ['ogbn-arxiv', 'Cora', 'CiteSeer', 'PubMed']:
@@ -60,7 +61,7 @@ def node_mask(run_time, args, device, graph_ori):
             if args.model == 'TIMME':
                 out = model(features_ori, adjs_ori, only_classify=True, node_weight=weight)
                 out = torch.exp(out)
-            elif args.model == 'TIMME-edge':
+            elif args.model == 'TIMME_edge':
                 emb = model(features_ori, adjs_ori, node_weight=weight)
                 out = model.calc_score_by_relation_2(triplets_ori, emb[:-1], cuda=True)
                 out = torch.concat(out)
@@ -96,7 +97,7 @@ def gnn_predict(run_time, args, device, graph):
         edge_index = [adj.coalesce().indices() for adj in adjs]
         edge_index = torch.concat(edge_index, 1)
         graph = dgl.graph((edge_index[0], edge_index[1]), num_nodes=feature.shape[0]).to(device)
-        graph.ndata['feat'] = feature
+        graph.ndata['feat'] = feature.to_dense()
     
     if args.method == 'gcn-n':
         pred_model = MyGCN(graph.ndata["feat"].shape[1], args.pred_hidden, 1,

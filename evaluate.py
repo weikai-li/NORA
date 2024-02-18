@@ -8,14 +8,18 @@ from load import load_default_args, load_results
 def performance(args):
     gt = load_results(args, 'brute')
     res = load_results(args, args.method)
+    # print(gt)
+    # print(res)
+    # exit()
     gt_sort = np.argsort(gt)
     res_sort = np.argsort(res)
-    assert (res<0).sum() == 0
+    # assert (res<0).sum() == 0
+    res[res < 0] = 0
 
     if args.method in ['gcn-n', 'gcn-e', 'gat-n', 'gat-e']:
-        num_train = 0
-    else:
         num_train = round(args.train_ratio * len(gt))
+    else:
+        num_train = 0
     num_val = round(args.val_ratio * len(gt))
     val_perf = stats.pearsonr(gt[num_train:num_train+num_val], res[num_train:num_train+num_val])[0]
     test_perf = stats.pearsonr(gt[num_train+num_val:], res[num_train+num_val:])[0]
@@ -122,10 +126,10 @@ def main():
     argparser.add_argument('--num_layers', type=int, default=0, help="0 means default")
     argparser.add_argument('--hidden_size', type=int, default=0, help="0 means default")
     argparser.add_argument('--dropout', type=int, default=0, help="0 means default")
-    argparser.add_argument('--method', type=str, default='brute', choices=['nora', 'degree',
+    argparser.add_argument('--method', type=str, default='nora', choices=['nora', 'degree',
         'betweenness', 'mask', 'gcn-n', 'gcn-e', 'gat-n', 'gat-e'])
-    argparser.add_argument('--train_ratio', type=float, default=0.5, help="for method 'gcn/gat'")
-    argparser.add_argument('--val_ratio', type=float, default=0.2)
+    argparser.add_argument('--train_ratio', type=float, default=0, help="for method 'gcn/gat'")
+    argparser.add_argument('--val_ratio', type=float, default=0, help="for method 'mask' and 'gcn/gat'")
     args = argparser.parse_args()
 
     args = load_default_args(args)

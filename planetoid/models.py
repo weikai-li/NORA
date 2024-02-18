@@ -207,7 +207,6 @@ class MyGraphSAGE(GNN_basic):
 
 class MyGATConv(GATConv):
     def forward(self, graph, feat, edge_weight=None, get_attention=False, node_weight=None):
-        assert edge_weight == None and node_weight == None
         with graph.local_scope():
             if not self._allow_zero_in_degree:
                 if (graph.in_degrees() == 0).any():
@@ -268,6 +267,7 @@ class MyGATConv(GATConv):
             el = (feat_src * self.attn_l).sum(dim=-1).unsqueeze(-1)
             er = (feat_dst * self.attn_r).sum(dim=-1).unsqueeze(-1)
             if node_weight is not None:
+                node_weight = node_weight.unsqueeze(1)
                 feat_src = feat_src * node_weight
             graph.srcdata.update({"ft": feat_src, "el": el})
             graph.dstdata.update({"er": er})

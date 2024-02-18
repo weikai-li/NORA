@@ -97,7 +97,7 @@ def load_default_args(args):
 def load_model(run_time, args, device, graph_ori):
     if args.dataset == 'ogbn-arxiv':
         if args.model == 'DrGAT':
-            model = DRGAT(768, 40, n_hidden=args.hidden_size, num_layers=3, n_heads=3, activation=F.relu,
+            model = DRGAT(768, 40, n_hidden=args.hidden_size, n_layers=3, n_heads=3, activation=F.relu,
                 dropout=0.8, hid_drop=0.8, input_drop=0.35, attn_drop=0.0, edge_drop=0.5,
                 use_attn_dst=False, use_symmetric_norm=True)
             saved_name = f'arxiv/DrGAT/saved_model/{run_time}_student_{args.hidden_size}.pkl'

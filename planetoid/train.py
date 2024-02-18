@@ -111,12 +111,12 @@ def cycle_edge_split(g, cycle, args):
 
 def load_dataset(args, data_dir='./data'):
     if args.dataset == 'Cora':
-        dataset = dgl.data.CoraGraphDataset(raw_dir=data_dir)
+        dataset = dgl.data.CoraGraphDataset(raw_dir=data_dir, verbose=False)
     elif args.dataset == 'CiteSeer':
-        dataset = dgl.data.CiteseerGraphDataset(raw_dir=data_dir)
+        dataset = dgl.data.CiteseerGraphDataset(raw_dir=data_dir, verbose=False)
     else:
         assert args.dataset == 'PubMed'
-        dataset = dgl.data.PubmedGraphDataset(raw_dir=data_dir)
+        dataset = dgl.data.PubmedGraphDataset(raw_dir=data_dir, verbose=False)
     return dataset
 
 
