@@ -1,3 +1,9 @@
-python main.py --method gcn-e --model TIMME_edge --dataset P_20_50 --lr 3e-4 --wd 0 --num_epochs 100 \
-    --pred_hidden 128 --pred_num_layers 2 --pred_dropout 0.0 --train_ratio 0.15 --val_ratio 0.05
-python evaluate.py --method gcn-e --model TIMME_edge --dataset P_20_50 --train_ratio 0.15 --val_ratio 0.05
+python main.py --dataset PubMed --method nora --model GAT --decay 0.9 --self_buff 7 --k3 0 \
+    --k1 0.5 --k2 0.4 0.2 --use_message
+python evaluate.py --dataset PubMed --model GAT --val_ratio 0.2
+# python main.py --dataset PubMed --method nora --model GAT --decay 0.95 --self_buff 7 --k3 0 \
+#     --k1 0.5 --k2 0.4 0.2 --use_message
+# python evaluate.py --dataset PubMed --model GAT --val_ratio 0.2
+# python main.py --dataset PubMed --method nora --model GAT --decay 1.0 --self_buff 7 --k3 0 \
+#     --k1 0.5 --k2 0.4 0.2 --use_message
+# python evaluate.py --dataset PubMed --model GAT --val_ratio 0.2

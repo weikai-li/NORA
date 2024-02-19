@@ -1,3 +1,4 @@
+import numpy as np
 import torch
 import torch.nn.functional as F
 import dgl
@@ -5,6 +6,7 @@ import dgl.function as fn
 from dgl.nn import GraphConv, SAGEConv, GATConv
 from dgl.nn.functional import edge_softmax
 from dgl.utils import expand_as_pair
+import copy
 
 
 class GNN_basic(torch.nn.Module):
@@ -21,10 +23,18 @@ class GNN_basic(torch.nn.Module):
                 bn.reset_parameters()
 
     def forward(self, graph, x, return_hidden=False, edge_weight=None, node_weight=None):
-        xs = []
+        assert edge_weight is None
+        xs, mes_list, agg_hid_list, grad_ratio_list = [], [], [], []
         for i, conv in enumerate(self.convs[:-1]):
             xs.append(x)
-            x = conv(graph, x, edge_weight=edge_weight, node_weight=node_weight)
+            if return_hidden == True:
+                x, message, agg_hid, grad_ratio = conv(graph, x, edge_weight=edge_weight,
+                    node_weight=node_weight, return_hidden=True)
+                mes_list.append(message)
+                agg_hid_list.append(agg_hid)
+                grad_ratio_list.append(grad_ratio)
+            else:
+                x = conv(graph, x, edge_weight=edge_weight, node_weight=node_weight)
             if isinstance(self, MyGAT):
                 x = x.reshape(x.shape[0], -1)
             if self.arxiv_data == True:
@@ -32,18 +42,25 @@ class GNN_basic(torch.nn.Module):
             x = F.relu(x)
             x = F.dropout(x, p=self.dropout, training=self.training)
         xs.append(x)
-        x = self.convs[-1](graph, x, edge_weight=edge_weight, node_weight=node_weight)
+        if return_hidden == True:
+            x, message, agg_hid, grad_ratio = self.convs[-1](graph, x, edge_weight=edge_weight,
+                node_weight=node_weight, return_hidden=True)
+            mes_list.append(message)
+            agg_hid_list.append(agg_hid)
+            grad_ratio_list.append(grad_ratio)
+        else:
+            x = self.convs[-1](graph, x, edge_weight=edge_weight, node_weight=node_weight)
         if isinstance(self, MyGAT):
             x = x.reshape(x.shape[0], -1)
         xs.append(x)
         if return_hidden:
-            return x, xs
+            return x, xs, mes_list, agg_hid_list, grad_ratio_list
         else:
             return x
 
 
 class MyGCNConv(GraphConv):
-    def forward(self, graph, feat, weight=None, edge_weight=None, node_weight=None):
+    def forward(self, graph, feat, weight=None, edge_weight=None, node_weight=None, return_hidden=False):
         with graph.local_scope():
             if not self._allow_zero_in_degree:
                 if (graph.in_degrees() == 0).any():
@@ -67,7 +84,8 @@ class MyGCNConv(GraphConv):
 
             # (BarclayII) For RGCN on heterogeneous graphs we need to support GCN on bipartite.
             feat_src, feat_dst = expand_as_pair(feat, graph)
-            if self._norm in ["left", "both"]:
+            message = feat_src.detach().clone()
+            if self._norm in ["left", "both"]:    # self._norm is "both"
                 degs = graph.out_degrees().to(feat_src).clamp(min=1)
                 if self._norm == "both":
                     norm = torch.pow(degs, -0.5)
@@ -77,6 +95,7 @@ class MyGCNConv(GraphConv):
                 norm = torch.reshape(norm, shp)
                 feat_src = feat_src * norm
 
+            assert weight is None   # In our case, the weight is always None
             if weight is not None:
                 if self.weight is not None:
                     raise DGLError(
@@ -106,7 +125,7 @@ class MyGCNConv(GraphConv):
                 if weight is not None:
                     rst = torch.matmul(rst, weight)
 
-            if self._norm in ["right", "both"]:
+            if self._norm in ["right", "both"]:    # Our norm is "both"
                 degs = graph.in_degrees().to(feat_dst).clamp(min=1)
                 if self._norm == "both":
                     norm = torch.pow(degs, -0.5)
@@ -115,14 +134,28 @@ class MyGCNConv(GraphConv):
                 shp = norm.shape + (1,) * (feat_dst.dim() - 1)
                 norm = torch.reshape(norm, shp)
                 rst = rst * norm
+            
+            if return_hidden == True:
+                agg_hid = rst
 
             if self.bias is not None:
                 rst = rst + self.bias
 
             if self._activation is not None:
                 rst = self._activation(rst)
-
-            return rst
+            
+            if return_hidden == True:
+                norm = torch.pow(degs, -0.5)
+                graph.srcdata['src_norm'] = norm
+                graph.update_all(fn.copy_u("src_norm", "m_norm"), fn.sum(msg="m_norm", out="norm_sum"))
+                total_agg = graph.dstdata['norm_sum'] * norm
+                tmp_graph = graph.remove_self_loop()
+                tmp_graph.update_all(fn.copy_u("src_norm", "m_norm"), fn.sum(msg="m_norm", out="norm_sum"))
+                other_agg = tmp_graph.dstdata['norm_sum'] * norm
+                grad_ratio = other_agg / total_agg
+                return rst, message, agg_hid, grad_ratio
+            else:
+                return rst
 
 
 class MyGCN(GNN_basic):
@@ -141,7 +174,7 @@ class MyGCN(GNN_basic):
 
 
 class MySAGEConv(SAGEConv):
-    def forward(self, graph, feat, edge_weight=None, node_weight=None):
+    def forward(self, graph, feat, edge_weight=None, node_weight=None, return_hidden=False):
         with graph.local_scope():
             if isinstance(feat, tuple):
                 feat_src = self.feat_drop(feat[0])
@@ -173,9 +206,12 @@ class MySAGEConv(SAGEConv):
                 feat_src = self.fc_neigh(feat_src)
             if node_weight is not None:
                 feat_src = feat_src * node_weight
+            message = feat_src.detach().clone()
             graph.srcdata["h"] = feat_src
             graph.update_all(msg_fn, fn.mean("m", "neigh"))
             h_neigh = graph.dstdata["neigh"]
+            if return_hidden == True:
+                agg_hid = h_neigh
             if not lin_before_mp:
                 h_neigh = self.fc_neigh(h_neigh)
             
@@ -187,7 +223,19 @@ class MySAGEConv(SAGEConv):
             # normalization
             if self.norm is not None:
                 rst = self.norm(rst)
-            return rst
+            
+            if return_hidden == True:
+                message_w = torch.norm(self.fc_neigh.weight, p=2)
+                residual_w = torch.norm(self.fc_self.weight, p=2)
+                ori_d = graph.in_degrees()
+                tmp_graph = graph.remove_self_loop()
+                new_d = tmp_graph.in_degrees()
+                total_agg = message_w * ori_d + residual_w
+                other_agg = message_w * new_d
+                grad_ratio = other_agg / total_agg
+                return rst, message, agg_hid, grad_ratio
+            else:
+                return rst
 
 
 class MyGraphSAGE(GNN_basic):
@@ -206,7 +254,7 @@ class MyGraphSAGE(GNN_basic):
 
 
 class MyGATConv(GATConv):
-    def forward(self, graph, feat, edge_weight=None, get_attention=False, node_weight=None):
+    def forward(self, graph, feat, edge_weight=None, get_attention=False, node_weight=None, return_hidden=False):
         with graph.local_scope():
             if not self._allow_zero_in_degree:
                 if (graph.in_degrees() == 0).any():
@@ -223,6 +271,7 @@ class MyGATConv(GATConv):
                     #     "suppress the check and let the code run."
                     # )
 
+            assert isinstance(feat, tuple) == False
             if isinstance(feat, tuple):
                 src_prefix_shape = feat[0].shape[:-1]
                 dst_prefix_shape = feat[1].shape[:-1]
@@ -269,6 +318,8 @@ class MyGATConv(GATConv):
             if node_weight is not None:
                 node_weight = node_weight.unsqueeze(1)
                 feat_src = feat_src * node_weight
+            message = feat_src.detach().clone()
+            message = message.reshape(message.shape[0], -1)
             graph.srcdata.update({"ft": feat_src, "el": el})
             graph.dstdata.update({"er": er})
             # compute edge attention, el and er are a_l Wh_i and a_r Wh_j respectively.
@@ -283,7 +334,10 @@ class MyGATConv(GATConv):
             # message passing
             graph.update_all(fn.u_mul_e("ft", "a", "m"), fn.sum("m", "ft"))
             rst = graph.dstdata["ft"]
+            if return_hidden == True:
+                agg_hid = rst
             # residual
+            assert self.res_fc is None
             if self.res_fc is not None:
                 # Use -1 rather than self._num_heads to handle broadcasting
                 resval = self.res_fc(h_dst).view(
@@ -309,8 +363,19 @@ class MyGATConv(GATConv):
             if self.activation:
                 rst = self.activation(rst)
 
-            if get_attention:
-                return rst, graph.edata["a"]
+            assert get_attention == False
+            # if get_attention:
+                # return rst, graph.edata["a"]
+            
+            if return_hidden == True:
+                graph.update_all(fn.copy_e("a", "a_m"), fn.sum(msg="a_m", out="a_sum"))
+                total_agg = graph.dstdata['a_sum']
+                tmp_graph = graph.remove_self_loop()
+                tmp_graph.update_all(fn.copy_e("a", "a_m"), fn.sum(msg="a_m", out="a_sum"))
+                other_agg = tmp_graph.dstdata['a_sum']
+                grad_ratio = other_agg / total_agg
+                grad_ratio = grad_ratio.reshape(grad_ratio.shape[0], -1).sum(1)
+                return rst, message, agg_hid, grad_ratio
             else:
                 return rst
 

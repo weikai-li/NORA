@@ -8,9 +8,6 @@ from load import load_default_args, load_results
 def performance(args):
     gt = load_results(args, 'brute')
     res = load_results(args, args.method)
-    # print(gt)
-    # print(res)
-    # exit()
     gt_sort = np.argsort(gt)
     res_sort = np.argsort(res)
     # assert (res<0).sum() == 0

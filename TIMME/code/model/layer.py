@@ -59,9 +59,10 @@ class GraphConvolution(Module):
         if self.bias is not None:
             self.bias.data.uniform_(-stdv, stdv)
 
-    def forward(self, input_, adjs):
+    def forward(self, input_, adjs, return_hidden=False):
         outputs = []
         # CUDA = adjs[0].is_cuda
+        message = input_.detach().clone()
         for i in range(len(self.adj_weight)):
             support = torch.mm(input_, self.adj_weight[i])
             output = torch.spmm(adjs[i], support)
@@ -69,6 +70,7 @@ class GraphConvolution(Module):
 
         outputs_raw = torch.stack(outputs)
         outputs = torch.stack(outputs, 2)
+        agg_hid = outputs
 
         if self.attention_mode == "naive":
             outputs = F.softmax(self.attention) * outputs
@@ -81,7 +83,15 @@ class GraphConvolution(Module):
 
         # attention to be added here
         output = torch.sum(outputs, 2)
-        return output if self.bias is None else output + self.bias
+        if self.bias is not None:
+            output = output + self.bias
+        
+        if return_hidden == True:
+            # This convolusion is very simple, so the grad_ratio can already be covered in the outside deg/(deg+args.self_buff)
+            grad_ratio = torch.ones(len(output)).to(output.device)
+            return output, message, agg_hid, grad_ratio
+        else:
+            return output
 
     def __repr__(self):
         return self.__class__.__name__ + ' (' + str(self.in_features) + ' -> ' + str(self.out_features) + ')'

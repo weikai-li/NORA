@@ -79,6 +79,8 @@ def node_mask(run_time, args, device, graph_ori):
         if val_loss < best_val:
             best_val = val_loss
             best_weight = weight.detach().clone()
+    
+    print(f'{weight.sum() / len(weight):.3f}', f'{best_weight.sum() / len(weight):.3f}')
     new_bias_list = (1 - best_weight).cpu().numpy().squeeze(1)
     return new_bias_list
 
