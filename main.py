@@ -131,12 +131,15 @@ def nora(run_time, args, device, graph_ori):
             new_deg = degree(adjs_ori[i].coalesce().indices()[0], num_nodes=num_node)
             deg = deg + new_deg
     mean_deg = deg.float().mean()
-    model.train()   # Using eval() model will disable the model to backward()
+    if args.model == 'DrGAT':
+        model.train()    # DrGAT does not support keeping gradient with model.eval()
+    else:
+        model.eval()   # Using eval() can make the model more robust
     
     if args.dataset in ['ogbn-arxiv', 'Cora', 'CiteSeer', 'PubMed']:
         x = copy.deepcopy(graph.ndata['feat'])
         x.requires_grad = True
-        out, hidden_list, mes_list, agg_hid_list, grad_ratio_list = model(graph, x, return_hidden=True)
+        out, hidden_list = model(graph, x, return_hidden=True)
         if args.model[-4:] != 'edge':
             out = F.softmax(out, dim=1)
         else:
@@ -147,38 +150,54 @@ def nora(run_time, args, device, graph_ori):
         x = copy.deepcopy(features_ori).to_dense()
         x.requires_grad = True
         if args.model == 'TIMME':
-            out, hidden_list, mes_list, agg_hid_list, grad_ratio_list = model(x, adjs_ori,
-                only_classify=True, return_hidden=True)
+            out, hidden_list = model(x, adjs_ori, only_classify=True, return_hidden=True)
             out = torch.exp(out)
         elif args.model == 'TIMME_edge':
-            emb, hidden_list, mes_list, agg_hid_list, grad_ratio_list = model(x, adjs_ori, return_hidden=True)
+            emb, hidden_list = model(x, adjs_ori, return_hidden=True)
             out = model.calc_score_by_relation_2(triplets_ori, emb[:-1], cuda=True)
     
+    # For link prediction outputs, we assign the output scores to nodes
+    if args.model[-4:] == 'edge':
+        if args.dataset in ['P50', 'P_20_50']:
+            tmp_out_list = []
+            for i in range(len(triplets_ori)):
+                triplet = torch.tensor(triplets_ori[i])
+                link_info1 = torch.concat([triplet[0], triplet[2]])
+                link_info2 = torch.concat([triplet[2], triplet[0]])
+                tmp_g = dgl.graph((link_info1, link_info2), num_nodes=num_node).to(device)
+                tmp_g.edata['score'] = torch.concat([out[i], out[i]])
+                tmp_g.update_all(fn.copy_e('score', 'score_m'), fn.sum('score_m', 'score_sum'))
+                tmp_out = tmp_g.ndata['score_sum']
+                tmp_out_list.append(tmp_out)
+            out = torch.stack(tmp_out_list).mean(0)
+        else:
+            link_info1 = torch.concat([pred_edge_ori[0], pred_edge_ori[1]])
+            link_info2 = torch.concat([pred_edge_ori[1], pred_edge_ori[0]])
+            tmp_g = dgl.graph((link_info1, link_info2), num_nodes=num_node).to(device)
+            tmp_g.edata['score'] = torch.concat([out, out])
+            tmp_g.update_all(fn.copy_e('score', 'score_m'), fn.sum('score_m', 'score_sum'))
+            out = tmp_g.ndata['score_sum']
+
     for hs in hidden_list:
         hs.retain_grad()
-    for hs in agg_hid_list:
-        hs.retain_grad()
-    out.backward(gradient=args.grad_num * num_node * torch.ones_like(out).to(device), retain_graph=True)
+    out.backward(gradient=out, retain_graph=True)
     hidden_grad_list = []
     for i in range(len(hidden_list)):
         hidden_grad_list.append(hidden_list[i].grad.detach())
 
     gradient = torch.zeros(num_node, device=device)
     rate = 1.0
-    assert len(hidden_list) == args.num_layers + 1 == len(mes_list) + 1 == len(agg_hid_list) + 1 == len(grad_ratio_list) + 1
+    assert len(hidden_list) == args.num_layers + 1
     for i in range(len(hidden_list) - 2, -1, -1):
         new_grad = hidden_grad_list[i] * hidden_list[i]
-        new_grad = torch.norm(new_grad, p=1, dim=1)
+        new_grad = torch.norm(new_grad, p=args.grad_norm, dim=1)
         new_grad = new_grad * deg / (deg + args.self_buff)
-        # new_grad = new_grad * grad_ratio_list[i]
         gradient = gradient + new_grad * rate
-        # rate = rate * (1 - mean_deg / (num_node - 1) / (mean_deg + args.self_buff))
         grad_sum = hidden_grad_list[i].abs().sum()
         grad_sum_ratio = hidden_grad_list[i].abs().sum(1) / grad_sum
         rate = rate * (1 - grad_sum_ratio * deg / (deg + args.self_buff))
-        rate = rate * args.decay
 
-    gradient = gradient.abs()
+    assert (gradient < 0).sum() == 0
     deg_delta1 = 1 / torch.sqrt(deg - 1) - 1 / torch.sqrt(deg)
     deg_delta2 = 1 / (deg-1) - 1 / deg
     deg_delta1[deg_delta1 == np.nan] = 1.0
@@ -211,32 +230,18 @@ def nora(run_time, args, device, graph_ori):
         graph = graph.remove_self_loop()
 
     deg_gather_list = []
-    for l in range(len(mes_list)):
-        if args.use_message:
-            if len(mes_list[l].shape) == 2:
-                mes = torch.norm(mes_list[l], p=1, dim=1)
-            else:
-                assert len(mes_list[l].shape) == 1
-                mes = mes_list[l]
-            graph.ndata.update({'deg_inv': deg_inv * mes})
-        else:
-            graph.ndata.update({'deg_inv': deg_inv})
-        graph.update_all(fn.copy_u("deg_inv", "m"), fn.sum("m", "deg_inv_sum"))
+    for l in range(args.num_layers):
+        graph.ndata.update({'deg_inv': deg_inv})
+        graph.update_all(fn.copy_u("deg_inv", "m1"), fn.sum("m1", "deg_inv_sum"))
         deg_gather = graph.ndata['deg_inv_sum']
-        if args.use_agg_hid_grad:
-            grad = torch.norm(agg_hid_list[l].grad.reshape(num_node, -1), p=1, dim=1)
-            graph.ndata.update({'deg_delta': deg_gather * deg_delta * grad})
-        else:
-            graph.ndata.update({'deg_delta': deg_gather * deg_delta})
-        graph.update_all(fn.copy_u("deg_delta", "m"), fn.sum("m", "deg_gather"))
+        graph.ndata.update({'deg_delta': deg_gather * deg_delta})
+        graph.update_all(fn.copy_u("deg_delta", "m2"), fn.sum("m2", "deg_gather"))
         deg_gather = graph.ndata['deg_gather']
         deg_gather_list.append(deg_gather)
     deg_gather = torch.stack(deg_gather_list).sum(0)
-
-    self_out = torch.norm(out, p=1, dim=1)
-    self_out = self_out / self_out.sum() * gradient.sum()
-    gradient = gradient - 1 * self_out
-    # gradient = - gradient + args.k3 * deg_gather
+    
+    deg_gather = deg_gather / deg_gather.mean() * gradient.mean()  # Normalize
+    gradient = gradient + args.k3 * deg_gather
     gradient = gradient.abs().detach().cpu().numpy()
     return gradient
 
@@ -261,10 +266,7 @@ def main():
     argparser.add_argument('--k3', type=float, default=1000, help="k3 for method 'nora'")
     argparser.add_argument('--self_buff', type=float, default=3.0, 
         help="The ratio of self's importance to other nodes, used for method 'nora'")
-    argparser.add_argument('--decay', type=float, default=1.0, help="used for method 'nora'")
-    argparser.add_argument('--grad_num', type=float, default=1.0, help="used for method 'nora'")
-    argparser.add_argument('--use_message', default=False, action='store_true', help="for method 'nora'")
-    argparser.add_argument('--use_agg_hid_grad', default=False, action='store_true', help="for method 'nora'")
+    argparser.add_argument('--grad_norm', type=float, default=1, help="used for method 'nora'")
     argparser.add_argument('--lr', type=float, default=1e-3, help="for method 'mask' and 'gcn/gat predict'")
     argparser.add_argument('--wd', type=float, default=0, help="for method 'mask' and 'gcn/gat predict'")
     argparser.add_argument('--num_epochs', type=int, default=100, help="for method 'mask' and 'gcn/gat")

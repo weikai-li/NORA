@@ -1,3 +1,9 @@
-python main.py --method gcn-n --model GAT_edge --dataset ogbn-arxiv --lr 1e-4 --wd 1e-5 --num_epochs 200 \
-    --pred_hidden 256 --pred_num_layers 3 --pred_dropout 0.3 --train_ratio 0.15 --val_ratio 0.05
-python evaluate.py --method gcn-n --model GAT_edge --dataset ogbn-arxiv --train_ratio 0.15 --val_ratio 0.05
+python main.py --dataset ogbn-arxiv --method nora --model DrGAT --self_buff 15 --grad_norm 2 \
+    --k1 0.5 --k2 0.8 0 --k3 0
+python evaluate.py --dataset ogbn-arxiv --model DrGAT --val_ratio 0.2
+python main.py --dataset ogbn-arxiv --method nora --model DrGAT --self_buff 15 --grad_norm 2 \
+    --k1 0.5 --k2 0.8 0 --k3 0
+python evaluate.py --dataset ogbn-arxiv --model DrGAT --val_ratio 0.2
+# python main.py --dataset ogbn-arxiv --method nora --model DrGAT --self_buff 20 --grad_norm 2 \
+    # --k1 0.5 --k2 0.8 0 --k3 0
+# python evaluate.py --dataset ogbn-arxiv --model DrGAT --val_ratio 0.2

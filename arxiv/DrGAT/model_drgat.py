@@ -103,7 +103,7 @@ class GATConv(nn.Module):
     def set_allow_zero_in_degree(self, set_value):
         self._allow_zero_in_degree = set_value
 
-    def forward(self, graph, feat, perm=None, node_weight=None, return_hidden=False):
+    def forward(self, graph, feat, perm=None, node_weight=None):
         with graph.local_scope():
             if not self._allow_zero_in_degree:
                 if (graph.in_degrees() == 0).any():
@@ -127,11 +127,6 @@ class GATConv(nn.Module):
                 else:
                     h_dst = h_src
                     feat_dst = feat_src
-            
-            if return_hidden == True:
-                message = feat_src.detach().clone()
-                message = message.reshape(message.shape[0], -1)
-                message = torch.norm(message, dim=1)
             
             if self._use_symmetric_norm:
                 degs = graph.out_degrees().float().clamp(min=1)
@@ -167,8 +162,6 @@ class GATConv(nn.Module):
             # message passing
             graph.update_all(fn.u_mul_e("ft", "a", "m"), fn.sum("m", "ft"))
             rst = graph.dstdata["ft"]
-            if return_hidden == True:
-                agg_hid = rst
 
             if self._use_symmetric_norm:
                 degs = graph.in_degrees().float().clamp(min=1)
@@ -185,22 +178,7 @@ class GATConv(nn.Module):
             if self._activation is not None:
                 rst = self._activation(rst)
             
-            if return_hidden == True:
-                message_w = torch.norm(self.fc.weight, p=2)
-                residual_w = torch.norm(self.res_fc.weight, p=2)
-                graph.update_all(fn.copy_e("a", "a_m"), fn.sum(msg="a_m", out="a_sum"))
-                total_agg = graph.dstdata['a_sum']
-                tmp_graph = graph.remove_self_loop()
-                tmp_graph.update_all(fn.copy_e("a", "a_m"), fn.sum(msg="a_m", out="a_sum"))
-                other_agg = tmp_graph.dstdata['a_sum']
-                total_agg = total_agg.reshape(total_agg.shape[0], -1).sum(1)
-                other_agg = other_agg.reshape(other_agg.shape[0], -1).sum(1)
-                total_agg = message_w * total_agg + residual_w
-                other_agg = message_w * other_agg
-                grad_ratio = other_agg / total_agg
-                return rst, message, agg_hid, grad_ratio
-            else:
-                return rst
+            return rst
 
 
 class DRGAT(nn.Module):
@@ -277,15 +255,7 @@ class DRGAT(nn.Module):
 
         _hidden = []
         hidden_list = [h]
-        mes_list, agg_hid_list, grad_ratio_list = [], [], []
-        if return_hidden == True:
-            h, mes, agg_hid, grad_ratio = self.convs[0](graph, h, self.perms[0],
-                node_weight=node_weight, return_hidden=True)
-            mes_list.append(mes)
-            agg_hid_list.append(agg_hid)
-            grad_ratio_list.append(grad_ratio)
-        else:
-            h = self.convs[0](graph, h, self.perms[0], node_weight=node_weight)
+        h = self.convs[0](graph, h, self.perms[0], node_weight=node_weight)
         h = h.flatten(1, -1)
         _hidden.append(h)
 
@@ -303,14 +273,7 @@ class DRGAT(nn.Module):
             h = F.dropout(h, p=self.hid_drop, training=self.training)
 
             hidden_list.append(h)
-            if return_hidden == True:
-                h, mes, agg_hid, grad_ratio = self.convs[i](graph, h, self.perms[i],
-                    node_weight=node_weight, return_hidden=True)
-                mes_list.append(mes)
-                agg_hid_list.append(agg_hid)
-                grad_ratio_list.append(grad_ratio)
-            else:
-                h = self.convs[i](graph, h, self.perms[i], node_weight=node_weight)
+            h = self.convs[i](graph, h, self.perms[i], node_weight=node_weight)
             h = h.flatten(1, -1)
             h = (1 - alpha_evo) * h + alpha_evo * _hidden[0]
 
@@ -318,19 +281,12 @@ class DRGAT(nn.Module):
         h = self.activation(h, inplace=True)
         h = self.dp_last(h)
         hidden_list.append(h)
-        if return_hidden == True:
-            h, mes, agg_hid, grad_ratio = self.convs[-1](graph, h, self.perms[-1],
-                node_weight=node_weight, return_hidden=True)
-            mes_list.append(mes)
-            agg_hid_list.append(agg_hid)
-            grad_ratio_list.append(grad_ratio)
-        else:
-            h = self.convs[-1](graph, h, self.perms[-1], node_weight=node_weight)
+        h = self.convs[-1](graph, h, self.perms[-1], node_weight=node_weight)
         h = h.mean(1)                  # shape: [169343, 1, 40] -> [169343, 40]
         hidden_list.append(h)
         h = self.bias_last(h)
 
         if return_hidden:
-            return h, hidden_list, mes_list, agg_hid_list, grad_ratio_list
+            return h, hidden_list
         else:
             return h

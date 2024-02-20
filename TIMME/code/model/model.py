@@ -37,28 +37,15 @@ class GCN_multirelation(nn.Module):
 
     def forward(self, x, adjs, return_hidden=False, node_weight=None):
         hidden_list = [x]
-        mes_list, agg_hid_list, grad_ratio_list = [], [], []
         if node_weight is not None:
             x = x.to_dense() * node_weight
-        if return_hidden == True:
-            x1, mes, agg_hid, grad_ratio = self.gc1(x, adjs, return_hidden=True)
-            mes_list.append(mes)
-            agg_hid_list.append(agg_hid)
-            grad_ratio_list.append(grad_ratio)
-        else:
-            x1 = self.gc1(x, adjs)
+        x1 = self.gc1(x, adjs)
         x1 = F.relu(x1)
         x1 = F.dropout(x1, self.dropout, training=self.training)
         hidden_list.append(x1)
         if node_weight is not None:
             x1 = x1 * node_weight
-        if return_hidden == True:
-            x2, mes, agg_hid, grad_ratio = self.gc2(x1, adjs, return_hidden=True)
-            mes_list.append(mes)
-            agg_hid_list.append(agg_hid)
-            grad_ratio_list.append(grad_ratio)
-        else:
-            x2 = self.gc2(x1, adjs)
+        x2 = self.gc2(x1, adjs)
         x2 = F.relu(x2)
         x2 = F.dropout(x2, self.dropout, training=self.training)
         hidden_list.append(x2)
@@ -66,7 +53,7 @@ class GCN_multirelation(nn.Module):
         if self.skip_mode != 'none':
             x2 = self.skip_connect_out(x2, x1)
         if return_hidden:
-            return x2, hidden_list, mes_list, agg_hid_list, grad_ratio_list
+            return x2, hidden_list
         else:
             return x2
 
@@ -208,20 +195,19 @@ class TIMME(nn.Module):
     
     def forward(self, x, adjs, only_classify=False, return_hidden=False, node_weight=None):
         if return_hidden:
-            gcn_embedding, hidden_list, mes_list, agg_hid_list, grad_ratio_list = self.gcn(x,
-                adjs, return_hidden=True, node_weight=node_weight)
+            gcn_embedding, hidden_list = self.gcn(x, adjs, return_hidden=True, node_weight=node_weight)
         else:
             gcn_embedding = self.gcn(x, adjs, node_weight=node_weight)
         if only_classify:
             output = self.models[-1](gcn_embedding, adjs, calc_gcn=False)
             if return_hidden:
-                return output, hidden_list, mes_list, agg_hid_list, grad_ratio_list
+                return output, hidden_list
             else:
                 return output
         else:
             output = [m(gcn_embedding, adjs, calc_gcn=False) for m in self.models]
             if return_hidden:
-                return output, hidden_list, mes_list, agg_hid_list, grad_ratio_list
+                return output, hidden_list
             else:
                 return output
     
