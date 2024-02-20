@@ -154,47 +154,11 @@ def nora(run_time, args, device, graph_ori):
             emb, hidden_list, mes_list, agg_hid_list, grad_ratio_list = model(x, adjs_ori, return_hidden=True)
             out = model.calc_score_by_relation_2(triplets_ori, emb[:-1], cuda=True)
     
-    # Compute f_r (other_out)
-    if args.model[-4:] == 'edge':
-        if args.model == 'TIMME_edge':
-            other_out = []
-            for i in range(5):
-                triplet = torch.tensor(triplets_ori[i])
-                # Consider a node's influence both as source node and destination node
-                link_info1 = torch.concat([triplet[0], triplet[2]])
-                link_info2 = torch.concat([triplet[2], triplet[0]])
-                tmp_g = dgl.graph((link_info1, link_info2), num_nodes=num_node).to(device)
-                tmp_g.edata['score'] = torch.concat([out[i], out[i]])
-                tmp_g.remove_self_loop()
-                tmp_g.update_all(fn.copy_e('score', 'score'), fn.sum('score', 'score_sum'))
-                me_out = tmp_g.ndata['score_sum']
-                other_out.append(out[i].sum() - me_out)
-            other_out = torch.stack(other_out)
-            other_out = other_out.sum(0)
-            
-        else:
-            link_info1 = torch.concat([pred_edge_ori[0], pred_edge_ori[1]])
-            link_info2 = torch.concat([pred_edge_ori[1], pred_edge_ori[0]])
-            tmp_g = dgl.graph((link_info1, link_info2), num_nodes=num_node)
-            tmp_g.edata['score'] = torch.concat([out, out])
-            tmp_g.remove_self_loop()
-            tmp_g.update_all(fn.copy_e('score', 'score'), fn.sum('score', 'score_sum'))
-            me_out = tmp_g.ndata['score_sum']
-            other_out = out.sum() - me_out
-    else:
-        total_out = out.sum(0)
-        other_out = total_out - out
-
     for hs in hidden_list:
         hs.retain_grad()
     for hs in agg_hid_list:
         hs.retain_grad()
-    if args.backward_choice == 'out':
-        out.backward(torch.ones_like(out).to(device), retain_graph=True)
-    elif args.backward_choice == 'other_out':
-        # other_out.backward(gradient=torch.ones_like(other_out).to(device), retain_graph=True)
-        # other_out.backward(gradient=other_out, retain_graph=True)
-        out.backward(gradient=num_node * torch.ones_like(out).to(device), retain_graph=True)
+    out.backward(gradient=args.grad_num * num_node * torch.ones_like(out).to(device), retain_graph=True)
     hidden_grad_list = []
     for i in range(len(hidden_list)):
         hidden_grad_list.append(hidden_list[i].grad.detach())
@@ -271,8 +235,8 @@ def nora(run_time, args, device, graph_ori):
 
     self_out = torch.norm(out, p=1, dim=1)
     self_out = self_out / self_out.sum() * gradient.sum()
-    gradient = gradient + 1 * self_out
-    gradient = - gradient + args.k3 * deg_gather
+    gradient = gradient - 1 * self_out
+    # gradient = - gradient + args.k3 * deg_gather
     gradient = gradient.abs().detach().cpu().numpy()
     return gradient
 
@@ -298,8 +262,7 @@ def main():
     argparser.add_argument('--self_buff', type=float, default=3.0, 
         help="The ratio of self's importance to other nodes, used for method 'nora'")
     argparser.add_argument('--decay', type=float, default=1.0, help="used for method 'nora'")
-    argparser.add_argument('--backward_choice', type=str, default='other_out',
-        choices=['out', 'other_out'], help="used for method 'nora'")
+    argparser.add_argument('--grad_num', type=float, default=1.0, help="used for method 'nora'")
     argparser.add_argument('--use_message', default=False, action='store_true', help="for method 'nora'")
     argparser.add_argument('--use_agg_hid_grad', default=False, action='store_true', help="for method 'nora'")
     argparser.add_argument('--lr', type=float, default=1e-3, help="for method 'mask' and 'gcn/gat predict'")
