@@ -193,9 +193,10 @@ def nora(run_time, args, device, graph_ori):
         new_grad = torch.norm(new_grad, p=args.grad_norm, dim=1)
         new_grad = new_grad * deg / (deg + args.self_buff)
         gradient = gradient + new_grad * rate
-        grad_sum = hidden_grad_list[i].abs().sum()
-        grad_sum_ratio = hidden_grad_list[i].abs().sum(1) / grad_sum
-        rate = rate * (1 - grad_sum_ratio * deg / (deg + args.self_buff))
+        # grad_sum = hidden_grad_list[i].abs().sum()
+        # grad_sum_ratio = hidden_grad_list[i].abs().sum(1) / grad_sum
+        # rate = rate * (1 - grad_sum_ratio * deg / (deg + args.self_buff))
+        rate = rate * (1 - mean_deg / (num_node - 1) / (mean_deg + args.self_buff))
 
     assert (gradient < 0).sum() == 0
     deg_delta1 = 1 / torch.sqrt(deg - 1) - 1 / torch.sqrt(deg)
