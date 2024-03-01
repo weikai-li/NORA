@@ -11,9 +11,11 @@ import sys
 from os import path
 sys.path.append(path.abspath('../../planetoid'))
 try:
-    from models import MyGCN, MyGraphSAGE, MyGAT
+    from models import MyGCN, MyGraphSAGE, MyGAT, MyGCNII
+    from best_config import arxiv_config
 except:
-    from planetoid.models import MyGCN, MyGraphSAGE, MyGAT
+    from planetoid.models import MyGCN, MyGraphSAGE, MyGAT, MyGCNII
+    from arxiv.simple.best_config import arxiv_config
 
 
 def cycle_node_split(data, cycle):
@@ -133,16 +135,22 @@ def load_model(args, graph):
     elif args.model == 'GAT':
         model = MyGAT(graph.ndata["feat"].shape[1], args.hidden_size,
                      40, args.num_layers, args.dropout, arxiv_data=True)
+    elif args.model == 'GCNII':
+        model = MyGCNII(graph.ndata["feat"].shape[1], args.hidden_size, 40, args.num_layers,
+            args.dropout, alpha=args.gcnii_alpha, lambda_=args.gcnii_lambda, arxiv_data=True)
     elif args.model == 'GCN_edge':
         model = MyGCN(graph.ndata["feat"].shape[1], args.hidden_size,
                      args.hidden_size, args.num_layers, args.dropout, arxiv_data=True)
     elif args.model == 'GraphSAGE_edge':
         model = MyGraphSAGE(graph.ndata["feat"].shape[1], args.hidden_size,
                      args.hidden_size, args.num_layers, args.dropout, arxiv_data=True)
-    else:
-        assert args.model == 'GAT_edge'
+    elif args.model == 'GAT_edge':
         model = MyGAT(graph.ndata["feat"].shape[1], args.hidden_size,
                      args.hidden_size, args.num_layers, args.dropout, arxiv_data=True)
+    else:
+        assert args.model == 'GCNII_edge'
+        model = MyGCNII(graph.ndata["feat"].shape[1], args.hidden_size, args.hidden_size, args.num_layers,
+            args.dropout, alpha=args.gcnii_alpha, lambda_=args.gcnii_lambda, arxiv_data=True)
     return model
 
 
@@ -172,7 +180,7 @@ def train(cycle, args):
         )
     model = model.to(device)
     evaluator = Evaluator(name='ogbn-arxiv')
-    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
+    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)
     best_val, final_test = 0, 0
 
     for epoch in range(args.num_epochs):
@@ -242,24 +250,46 @@ def train(cycle, args):
 
 
 def load_config(args):
-    if args.num_layers == 0:
-        args.num_layers = 3
-    if args.hidden_size == 0:
-        args.hidden_size = 256
-    if args.dropout == 0:
-        args.dropout = 0.5
+    if args.model == 'DrGAT':
+        if args.num_layers == 0:
+            args.num_layers = 3
+        if args.hidden_size == 0:
+            args.hidden_size = 256
+        if args.dropout == 0:
+            args.dropout = 0.8
+    
+    else:
+        config = arxiv_config[args.model]
+        if args.num_layers == 0:
+            args.num_layers = config['num_layers']
+        if args.hidden_size == 0:
+            args.hidden_size = config['hidden_size']
+        if args.dropout == 0:
+            args.dropout = config['dropout']
+        if args.model in ['GCNII', 'GCNII_edge']:
+            if hasattr(args, 'gcnii_alpha'):
+                if args.gcnii_alpha == 0:
+                    args.gcnii_alpha = config['gcnii_alpha']
+                if args.gcnii_lambda == 0:
+                    args.gcnii_lambda = config['gcnii_lambda']
+            else:
+                args.gcnii_alpha = config['gcnii_alpha']
+                args.gcnii_lambda = config['gcnii_lambda']
     return args
 
 
 def main():
     parser = argparse.ArgumentParser(description='OGBN-Arxiv')
     parser.add_argument('--log_steps', type=int, default=20)
-    parser.add_argument('--model', type=str, default='GCN', choices=['GCN', 'GraphSAGE', 'GAT'])
+    parser.add_argument('--model', type=str, default='GCNII', choices=['GCN', 'GraphSAGE', 'GAT', 'GCNII'])
     # 0 means using the default best hyper-parameters
-    parser.add_argument('--num_layers', type=int, default=3)
-    parser.add_argument('--hidden_size', type=int, default=256)
-    parser.add_argument('--dropout', type=float, default=0.5)
-    parser.add_argument('--lr', type=float, default=0.01)
+    parser.add_argument('--num_layers', type=int, default=0)
+    parser.add_argument('--hidden_size', type=int, default=0)
+    parser.add_argument('--dropout', type=float, default=0)
+    parser.add_argument('--lr', type=float, default=0)
+    parser.add_argument('--wd', type=float, default=0)
+    parser.add_argument('--gcnii_alpha', type=float, default=0)
+    parser.add_argument('--gcnii_lambda', type=float, default=0)
     parser.add_argument('--num_epochs', type=int, default=300)
     parser.add_argument('--link_prediction', action='store_true', default=False)
     args = parser.parse_args()
@@ -267,6 +297,11 @@ def main():
     if args.link_prediction == True:
         args.model = f'{args.model}_edge'
     args = load_config(args)
+    config = arxiv_config[args.model]
+    if args.lr == 0:
+        args.lr = config['lr']
+    if args.wd == 0:
+        args.wd = config['wd']
     print(args)
 
     val_accs, test_accs = [], []

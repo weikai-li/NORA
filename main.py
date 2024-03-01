@@ -21,6 +21,7 @@ def brute(run_time, args, device, graph_ori):
     model = load_model(run_time, args, device, graph_ori)
     if args.dataset in ['Cora', 'CiteSeer', 'PubMed']:
         graph_ori = graph_ori[0].to(device)
+        deg = graph_ori.in_degrees()
     model.eval()
 
     with torch.no_grad():
@@ -196,7 +197,7 @@ def nora(run_time, args, device, graph_ori):
         # grad_sum = hidden_grad_list[i].abs().sum()
         # grad_sum_ratio = hidden_grad_list[i].abs().sum(1) / grad_sum
         # rate = rate * (1 - grad_sum_ratio * deg / (deg + args.self_buff))
-        rate = rate * (1 - mean_deg / (num_node - 1) / (mean_deg + args.self_buff))
+        rate = rate * (1 - deg / (num_node - 1) / (mean_deg + args.self_buff))
 
     assert (gradient < 0).sum() == 0
     deg_delta1 = 1 / torch.sqrt(deg - 1) - 1 / torch.sqrt(deg)
@@ -230,17 +231,12 @@ def nora(run_time, args, device, graph_ori):
     else:
         graph = graph.remove_self_loop()
 
-    deg_gather_list = []
-    for l in range(args.num_layers):
-        graph.ndata.update({'deg_inv': deg_inv})
-        graph.update_all(fn.copy_u("deg_inv", "m1"), fn.sum("m1", "deg_inv_sum"))
-        deg_gather = graph.ndata['deg_inv_sum']
-        graph.ndata.update({'deg_delta': deg_gather * deg_delta})
-        graph.update_all(fn.copy_u("deg_delta", "m2"), fn.sum("m2", "deg_gather"))
-        deg_gather = graph.ndata['deg_gather']
-        deg_gather_list.append(deg_gather)
-    deg_gather = torch.stack(deg_gather_list).sum(0)
-    
+    graph.ndata.update({'deg_inv': deg_inv})
+    graph.update_all(fn.copy_u("deg_inv", "m1"), fn.sum("m1", "deg_inv_sum"))
+    deg_gather = graph.ndata['deg_inv_sum']
+    graph.ndata.update({'deg_delta': deg_gather * deg_delta})
+    graph.update_all(fn.copy_u("deg_delta", "m2"), fn.sum("m2", "deg_gather"))
+    deg_gather = graph.ndata['deg_gather']
     deg_gather = deg_gather / deg_gather.mean() * gradient.mean()  # Normalize
     gradient = gradient + args.k3 * deg_gather
     gradient = gradient.abs().detach().cpu().numpy()
@@ -252,12 +248,12 @@ def main():
     argparser.add_argument("--dataset", type=str, default="Cora", choices=['Cora', 'CiteSeer', 
         'PubMed', 'ogbn-arxiv', 'P50', 'P_20_50'])
     argparser.add_argument('--model', type=str, default='GCN', choices=['GCN', 'GraphSAGE', 'GAT', 
-        'DrGAT', 'TIMME', 'GCN_edge', 'GraphSAGE_edge', 'GAT_edge', 'TIMME_edge'])
+        'DrGAT', 'GCNII', 'TIMME', 'GCN_edge', 'GraphSAGE_edge', 'GAT_edge', 'GCNII_edge', 'TIMME_edge'])
     argparser.add_argument('--method', type=str, default='brute', choices=['brute',
         'nora', 'mask', 'gcn-n', 'gcn-e', 'gat-n', 'gat-e'])
     argparser.add_argument('--cycles', type=int, nargs='+', default=[], help="[] means all")
     # Hyper-parameters for loading the original trained model
-    argparser.add_argument('--triplet_batch_size', type=int, default=0, help="for method 'brute' and model 'TIMME_edge'")
+    argparser.add_argument('--triplet_batch_size', type=int, default=0, help="for model 'TIMME_edge'")
     argparser.add_argument('--num_layers', type=int, default=0, help="0 means default")
     argparser.add_argument('--hidden_size', type=int, default=0, help="0 means default")
     argparser.add_argument('--dropout', type=int, default=0, help="0 means default")

@@ -7,10 +7,10 @@ from sklearn.metrics import roc_auc_score
 import os
 import copy
 try:
-    from models import MyGCN, MyGraphSAGE, MyGAT
+    from models import MyGCN, MyGraphSAGE, MyGAT, MyGCNII
     from best_config import planetoid_config
 except:
-    from planetoid.models import MyGCN, MyGraphSAGE, MyGAT
+    from planetoid.models import MyGCN, MyGraphSAGE, MyGAT, MyGCNII
     from planetoid.best_config import planetoid_config
 
 
@@ -131,16 +131,22 @@ def load_model(args, dataset):
     elif args.model == 'GAT':
         model = MyGAT(g.ndata["feat"].shape[1], args.hidden_size, dataset.num_classes,
             args.num_layers, args.dropout)
+    elif args.model == 'GCNII':
+        model = MyGCNII(g.ndata["feat"].shape[1], args.hidden_size, dataset.num_classes,
+            args.num_layers, args.dropout, alpha=args.gcnii_alpha, lambda_=args.gcnii_lambda)
     elif args.model == 'GCN_edge':
         model = MyGCN(g.ndata["feat"].shape[1], args.hidden_size, args.hidden_size,
             args.num_layers, args.dropout)
     elif args.model == 'GraphSAGE_edge':
         model = MyGraphSAGE(g.ndata["feat"].shape[1], args.hidden_size, args.hidden_size,
             args.num_layers, args.dropout)
-    else:
-        assert args.model == 'GAT_edge'
+    elif args.model == 'GAT_edge':
         model = MyGAT(g.ndata["feat"].shape[1], args.hidden_size, args.hidden_size,
             args.num_layers, args.dropout)
+    else:
+        assert args.model == 'GCNII_edge'
+        model = MyGCNII(g.ndata["feat"].shape[1], args.hidden_size, args.hidden_size,
+            args.num_layers, args.dropout, alpha=args.gcnii_alpha, lambda_=args.gcnii_lambda)
     return model
 
 
@@ -225,7 +231,8 @@ def train(cycle, args):
                 f"test: {test_acc:.3f} (best {best_test_acc:.3f})"
             )
     
-    saved_name = f'saved_model/{cycle}_{args.dataset}_{args.model.lower()}_{args.num_layers}_{args.hidden_size}.pkl'
+    saved_name = f'saved_model/{cycle}_{args.dataset}_{args.model.lower()}_{args.num_layers}'
+    saved_name += f'_{args.hidden_size}.pkl'
     torch.save(best_model.state_dict(), saved_name)
     return best_val_acc.item(), best_test_acc.item()
 
@@ -238,6 +245,15 @@ def load_config(args):
         args.hidden_size = config['hidden_size']
     if args.dropout == 0:
         args.dropout = config['dropout']
+    if args.model in ['GCNII', 'GCNII_edge']:
+        if hasattr(args, 'gcnii_alpha'):
+            if args.gcnii_alpha == 0:
+                args.gcnii_alpha = config['gcnii_alpha']
+            if args.gcnii_lambda == 0:
+                args.gcnii_lambda = config['gcnii_lambda']
+        else:
+            args.gcnii_alpha = config['gcnii_alpha']
+            args.gcnii_lambda = config['gcnii_lambda']
     return args
 
 
@@ -245,13 +261,15 @@ def main():
     parser = argparse.ArgumentParser(description='Planetoid')
     parser.add_argument('--log_steps', type=int, default=20)
     parser.add_argument('--dataset', type=str, default='Cora', choices=['Cora', 'CiteSeer', 'PubMed'])
-    parser.add_argument('--model', type=str, default='GCN', choices=['GCN', 'GraphSAGE', 'GAT'])
+    parser.add_argument('--model', type=str, default='GCNII', choices=['GCN', 'GraphSAGE', 'GAT', 'GCNII'])
     # 0 means using the default best hyper-parameters
     parser.add_argument('--num_layers', type=int, default=0)
     parser.add_argument('--hidden_size', type=int, default=0)
     parser.add_argument('--dropout', type=float, default=0)
     parser.add_argument('--lr', type=float, default=0)
     parser.add_argument('--wd', type=float, default=0)
+    parser.add_argument('--gcnii_alpha', type=float, default=0)
+    parser.add_argument('--gcnii_lambda', type=float, default=0)
     parser.add_argument('--num_epochs', type=int, default=300)
     parser.add_argument('--link_prediction', action='store_true', default=False)
     args = parser.parse_args()

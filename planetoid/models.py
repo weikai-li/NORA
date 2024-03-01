@@ -3,7 +3,7 @@ import torch
 import torch.nn.functional as F
 import dgl
 import dgl.function as fn
-from dgl.nn import GraphConv, SAGEConv, GATConv
+from dgl.nn import GraphConv, SAGEConv, GATConv, GCN2Conv
 from dgl.nn.functional import edge_softmax
 from dgl.utils import expand_as_pair
 import copy
@@ -340,3 +340,107 @@ class MyGAT(GNN_basic):
             for _ in range(num_layers - 1):
                 self.bns.append(torch.nn.BatchNorm1d(hidden_channels * num_heads))
         self.reset_parameters()
+
+
+class MyGCNIIConv(GCN2Conv):
+    def forward(self, graph, feat, feat_0, edge_weight=None, node_weight=None):
+        with graph.local_scope():
+            # if not self._allow_zero_in_degree:
+            #     if (graph.in_degrees() == 0).any():
+            #         raise DGLError(
+            #             "There are 0-in-degree nodes in the graph, "
+            #             "output for those nodes will be invalid. "
+            #             "This is harmful for some applications, "
+            #             "causing silent performance regression. "
+            #             "Adding self-loop on the input graph by "
+            #             "calling `g = dgl.add_self_loop(g)` will resolve "
+            #             "the issue. Setting ``allow_zero_in_degree`` "
+            #             "to be `True` when constructing this module will "
+            #             "suppress the check and let the code run."
+            #         )
+
+            # normalize  to get smoothed representation
+            if edge_weight is None:
+                degs = graph.in_degrees().float().clamp(min=1)
+                norm = torch.pow(degs, -0.5)
+                norm = norm.to(feat.device).unsqueeze(1)
+            else:
+                edge_weight = EdgeWeightNorm('both')(graph, edge_weight)
+
+            if edge_weight is None:
+                feat = feat * norm
+            if node_weight is not None:
+                feat = feat * node_weight
+            graph.ndata["h"] = feat
+            msg_func = fn.copy_u("h", "m")
+            if edge_weight is not None:
+                graph.edata["_edge_weight"] = edge_weight
+                msg_func = fn.u_mul_e("h", "_edge_weight", "m")
+            graph.update_all(msg_func, fn.sum("m", "h"))
+            feat = graph.ndata.pop("h")
+            if edge_weight is None:
+                feat = feat * norm
+            # scale
+            feat = feat * (1 - self.alpha)
+
+            # initial residual connection to the first layer
+            feat_0 = feat_0[: feat.size(0)] * self.alpha
+
+            if self._project_initial_features:
+                rst = feat.add_(feat_0)
+                rst = torch.addmm(
+                    feat, feat, self.weight1, beta=(1 - self.beta), alpha=self.beta
+                )
+            else:
+                rst = torch.addmm(
+                    feat, feat, self.weight1, beta=(1 - self.beta), alpha=self.beta
+                )
+                rst += torch.addmm(
+                    feat_0, feat_0, self.weight2, beta=(1 - self.beta), alpha=self.beta
+                )
+
+            if self._bias:
+                rst = rst + self.bias
+
+            if self._activation is not None:
+                rst = self._activation(rst)
+
+            return rst
+
+
+class MyGCNII(GNN_basic):
+    def __init__(self, in_channels, hidden_channels, out_channels, num_layers, dropout, 
+            alpha=0.1, lambda_=1, arxiv_data=False):
+        super(MyGCNII, self).__init__(dropout, arxiv_data)
+        self.input_proj = torch.nn.Linear(in_channels, hidden_channels)
+        self.convs = torch.nn.ModuleList()
+        for l in range(num_layers):
+            self.convs.append(MyGCNIIConv(hidden_channels, layer=l+1, alpha=alpha, lambda_=lambda_))
+        if arxiv_data == True:
+            self.bns = torch.nn.ModuleList()
+            for _ in range(num_layers - 1):
+                self.bns.append(torch.nn.BatchNorm1d(hidden_channels))
+        self.output_proj = torch.nn.Linear(hidden_channels, out_channels)
+        self.input_proj.reset_parameters()
+        self.output_proj.reset_parameters()
+        self.reset_parameters()
+
+    def forward(self, graph, x, return_hidden=False, node_weight=None):
+        xs = []
+        x = self.input_proj(x)
+        x_0 = x
+        for i, conv in enumerate(self.convs[:-1]):
+            xs.append(x)
+            x = conv(graph, feat=x, feat_0=x_0, node_weight=node_weight)
+            if self.arxiv_data == True:
+                x = self.bns[i](x)
+            x = F.relu(x)
+            x = F.dropout(x, p=self.dropout, training=self.training)
+        xs.append(x)
+        x = self.convs[-1](graph, feat=x, feat_0=x_0, node_weight=node_weight)
+        xs.append(x)
+        x = self.output_proj(x)
+        if return_hidden:
+            return x, xs
+        else:
+            return x
