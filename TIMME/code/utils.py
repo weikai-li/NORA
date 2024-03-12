@@ -306,8 +306,8 @@ def multi_relation_load(path="../data/PureP", label="dict.csv",
                         calc_lap=None, separate_directions=True, feature_data="one_hot", feature_file=None, feat_order_file="all_twitter_ids.csv",
                         split_links=False, portion={"valid": 0.05, "test": 0.1}, freeze_feature=False,
                         additional_labels_files=["../data/additional_labels/new_dict_cleaned.csv"], add_additional_labels=True, cycle=0):
-    print("Loading data from path {0}".format(path))
-    print("  relations: {}".format(" ".join(files)))
+    # print("Loading data from path {0}".format(path))
+    # print("  relations: {}".format(" ".join(files)))
     assert calc_lap in ["col", "row", None], "calc_lap must be row, column or None"
     DATA = Path(path)
     FILE = [DATA/i for i in files]
@@ -327,7 +327,7 @@ def multi_relation_load(path="../data/PureP", label="dict.csv",
 
     # decide if we would like to use additional labels
     if add_additional_labels:
-        print("\tloading additional labels from {} files: {}".format(len(additional_labels_files), ", ".join(additional_labels_files) if len(additional_labels_files) else "None"))
+        # print("\tloading additional labels from {} files: {}".format(len(additional_labels_files), ", ".join(additional_labels_files) if len(additional_labels_files) else "None"))
         additional_labels_dfs = [pd.read_csv(fname, sep="\t") for fname in additional_labels_files]
         for tmp_df in additional_labels_dfs:
             # if there are additional labels
@@ -359,7 +359,7 @@ def multi_relation_load(path="../data/PureP", label="dict.csv",
     idx_val = idx_all[n_train: n_train + n_valid]
     idx_test = idx_all[n_train + n_valid: ]
     
-    print("\tprocessing nodes")
+    # print("\tprocessing nodes")
     
     unlabeled_ids = all_ids - set(labeled_ids)
     all_id_list = np.concatenate((  np.array(labeled_ids, dtype=np.int64), 
@@ -368,7 +368,7 @@ def multi_relation_load(path="../data/PureP", label="dict.csv",
     n_entities = len(all_id_list)
     idx_map = {j: i for i, j in enumerate(all_id_list)}
     
-    print("\tprocessing edges")
+    # print("\tprocessing edges")
 
     adjs = list()
 
@@ -437,7 +437,7 @@ def multi_relation_load(path="../data/PureP", label="dict.csv",
                                   shape=(n_entities, n_entities), dtype=np.float32)
         adjs.append(calculate_laplacian(self_loop, calc_lap))
 
-    print("\tprocessing features")
+    # print("\tprocessing features")
 
     trainable = None
     mask = None

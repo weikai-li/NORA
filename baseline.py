@@ -4,7 +4,6 @@ import torch.nn.functional as F
 from tqdm import tqdm
 import dgl
 import dgl.function as fn
-import copy
 from load import load_model, load_results
 from planetoid.models import MyGCN, MyGAT
 
@@ -16,7 +15,7 @@ def node_mask(run_time, args, device, graph_ori):
     if args.dataset in ['Cora', 'CiteSeer', 'PubMed']:
         graph_ori = graph_ori[0].to(device)
     
-    model.eval()    # Using model.eval() can make the outputs more stable
+    model.eval()    # Using model.eval() can stabilize the results
     with torch.no_grad():
         if args.dataset in ['ogbn-arxiv', 'Cora', 'CiteSeer', 'PubMed']:
             ori_out = model(graph_ori, graph_ori.ndata['feat'])
@@ -69,7 +68,7 @@ def node_mask(run_time, args, device, graph_ori):
         loss1 = - (out - ori_out).abs()
         val_loss = loss1[:num_val].mean()
         loss2 = (num_node - weight.sum()) / num_node
-        loss = loss1.mean() + args.alpha * loss2
+        loss = loss1.mean() + args.beta * loss2
         loss.backward()
         optimizer.step()
         weight.requires_grad = False
@@ -80,15 +79,15 @@ def node_mask(run_time, args, device, graph_ori):
             best_val = val_loss
             best_weight = weight.detach().clone()
     
-    print(f'{weight.sum() / len(weight):.3f}', f'{best_weight.sum() / len(weight):.3f}')
-    new_bias_list = (1 - best_weight).cpu().numpy().squeeze(1)
-    return new_bias_list
+    # print(f'{weight.sum() / len(weight):.3f}', f'{best_weight.sum() / len(weight):.3f}')
+    new_result_list = (1 - best_weight).cpu().numpy().squeeze(1)
+    return new_result_list
 
 
 def gnn_predict(run_time, args, device, graph):
     gt = load_results(args, 'brute')
     gt = torch.tensor(gt, dtype=torch.float32).to(device).unsqueeze(1)
-    gt = (gt - gt.mean()) / gt.std() - gt.min()
+    gt = (gt - gt.mean()) / gt.std() - gt.min()   # Normalizing makes it easier to predict
     
     if args.model[-4:] == 'edge' and args.dataset not in ['P50', 'P_20_50']:
         graph, pred_edge_ori = graph
@@ -138,5 +137,5 @@ def gnn_predict(run_time, args, device, graph):
             best_val = val_loss
             best_out = out.detach()
 
-    new_bias_list = best_out.squeeze(1).cpu().numpy()
-    return new_bias_list
+    new_result_list = best_out.squeeze(1).cpu().numpy()
+    return new_result_list

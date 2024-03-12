@@ -234,6 +234,8 @@ def train(cycle, args):
     saved_name = f'saved_model/{cycle}_{args.dataset}_{args.model.lower()}_{args.num_layers}'
     saved_name += f'_{args.hidden_size}.pkl'
     torch.save(best_model.state_dict(), saved_name)
+    print('Saved GNN model at:', saved_name)
+    print()
     return best_val_acc.item(), best_test_acc.item()
 
 
@@ -261,8 +263,8 @@ def main():
     parser = argparse.ArgumentParser(description='Planetoid')
     parser.add_argument('--log_steps', type=int, default=20)
     parser.add_argument('--dataset', type=str, default='Cora', choices=['Cora', 'CiteSeer', 'PubMed'])
-    parser.add_argument('--model', type=str, default='GCNII', choices=['GCN', 'GraphSAGE', 'GAT', 'GCNII'])
-    # 0 means using the default best hyper-parameters
+    parser.add_argument('--model', type=str, default='GCN', choices=['GCN', 'GraphSAGE', 'GAT', 'GCNII'])
+    # 0 means using the default tuned hyper-parameters
     parser.add_argument('--num_layers', type=int, default=0)
     parser.add_argument('--hidden_size', type=int, default=0)
     parser.add_argument('--dropout', type=float, default=0)
@@ -289,7 +291,7 @@ def main():
         val_acc, test_acc = train(cycle, args)
         val_accs.append(val_acc)
         test_accs.append(test_acc)
-    print(f'Average val acc/auc: {np.mean(val_accs):.4f}, test acc/auc: {np.mean(test_accs):.4f}')
+    print(f'Average val: {np.mean(val_accs):.4f}, test: {np.mean(test_accs):.4f}')
 
 
 if __name__ == '__main__':

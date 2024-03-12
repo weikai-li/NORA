@@ -44,7 +44,7 @@ def brute(run_time, args, device, graph_ori):
                 ori_out = model.calc_score_by_relation_2(triplets_ori, ori_emb[:-1], cuda=True)
             num_node = len(features_ori)
 
-    new_bias_list = []
+    new_result_list = []
     for r_node in tqdm(range(num_node)):
         if args.dataset in ['ogbn-arxiv', 'Cora', 'CiteSeer', 'PubMed']:
             graph = graph_ori.clone()
@@ -53,7 +53,7 @@ def brute(run_time, args, device, graph_ori):
                 out = model(graph, graph.ndata['feat'])
                 if args.model[-4:] != 'edge':
                     out = F.softmax(out, dim=1)
-                    bias = (out - torch.cat((ori_out[:r_node], ori_out[r_node+1:]))).abs()
+                    influence = (out - torch.cat((ori_out[:r_node], ori_out[r_node+1:]))).abs()
                 else:
                     unequal_mask = (pred_edge_ori != r_node)
                     unequal_mask = unequal_mask[0] & unequal_mask[1]
@@ -64,7 +64,7 @@ def brute(run_time, args, device, graph_ori):
                     out = out[pred_edge[0]] * out[pred_edge[1]]
                     out = out.sum(1)
                     out = torch.sigmoid(out)
-                    bias = (out - selected_out).abs()
+                    influence = (out - selected_out).abs()
                 
         elif args.model in ['TIMME', 'TIMME_edge']:
             feat_indices = features_ori._indices()
@@ -106,11 +106,11 @@ def brute(run_time, args, device, graph_ori):
                 with torch.no_grad():
                     emb = model(features, adjs)
                     out = model.calc_score_by_relation_2(triplets, emb[:-1], cuda=True)
-                bias = (torch.cat(out) - torch.cat(ori_out_selected)).abs()
+                influence = (torch.cat(out) - torch.cat(ori_out_selected)).abs()
         
-        bias = bias.mean().item()
-        new_bias_list.append(bias)
-    return new_bias_list
+        influence = influence.mean().item()
+        new_result_list.append(influence)
+    return new_result_list
 
 
 def nora(run_time, args, device, graph_ori):
@@ -135,7 +135,7 @@ def nora(run_time, args, device, graph_ori):
     if args.model == 'DrGAT':
         model.train()    # DrGAT does not support keeping gradient with model.eval()
     else:
-        model.eval()   # Using eval() can make the model more robust
+        model.eval()   # Using eval() can stabilize the results
     
     if args.dataset in ['ogbn-arxiv', 'Cora', 'CiteSeer', 'PubMed']:
         x = copy.deepcopy(graph.ndata['feat'])
@@ -238,9 +238,9 @@ def nora(run_time, args, device, graph_ori):
     graph.update_all(fn.copy_u("deg_delta", "m2"), fn.sum("m2", "deg_gather"))
     deg_gather = graph.ndata['deg_gather']
     deg_gather = deg_gather / deg_gather.mean() * gradient.mean()  # Normalize
-    gradient = gradient + args.k3 * deg_gather
-    gradient = gradient.abs().detach().cpu().numpy()
-    return gradient
+    influence = gradient + args.k3 * deg_gather
+    influence = influence.abs().detach().cpu().numpy()
+    return influence
 
 
 def main():
@@ -251,65 +251,68 @@ def main():
         'DrGAT', 'GCNII', 'TIMME', 'GCN_edge', 'GraphSAGE_edge', 'GAT_edge', 'GCNII_edge', 'TIMME_edge'])
     argparser.add_argument('--method', type=str, default='brute', choices=['brute',
         'nora', 'mask', 'gcn-n', 'gcn-e', 'gat-n', 'gat-e'])
-    argparser.add_argument('--cycles', type=int, nargs='+', default=[], help="[] means all")
-    # Hyper-parameters for loading the original trained model
-    argparser.add_argument('--triplet_batch_size', type=int, default=0, help="for model 'TIMME_edge'")
+    argparser.add_argument('--cycles', type=int, nargs='+', default=[],
+        help="We run each experiment for five times and cycle around the data split, "
+            "so the cycles should be from 0, 1, 2, 3, 4. [] means all. Only supports 'brute' method")
+    # Hyper-parameters of the trained GNN model used to load the model. 0 means our tuned hyper-parameters.
     argparser.add_argument('--num_layers', type=int, default=0, help="0 means default")
     argparser.add_argument('--hidden_size', type=int, default=0, help="0 means default")
     argparser.add_argument('--dropout', type=int, default=0, help="0 means default")
-    # Hyper-parameters for the approximation methods
-    argparser.add_argument('--k1', type=float, default=0.5, help="k1 for method 'nora' or 'MLP'")
-    argparser.add_argument('--k2', type=float, default=[0.5, 0.5], nargs='+', help="k2 for method 'nora'")
-    argparser.add_argument('--k3', type=float, default=1000, help="k3 for method 'nora'")
-    argparser.add_argument('--self_buff', type=float, default=3.0, 
-        help="The ratio of self's importance to other nodes, used for method 'nora'")
-    argparser.add_argument('--grad_norm', type=float, default=1, help="used for method 'nora'")
-    argparser.add_argument('--lr', type=float, default=1e-3, help="for method 'mask' and 'gcn/gat predict'")
-    argparser.add_argument('--wd', type=float, default=0, help="for method 'mask' and 'gcn/gat predict'")
-    argparser.add_argument('--num_epochs', type=int, default=100, help="for method 'mask' and 'gcn/gat")
-    argparser.add_argument('--alpha', type=float, default=0.1, help="for method 'mask'")
-    argparser.add_argument('--pred_hidden', type=int, default=64, help="for method 'gcn/gat'")
-    argparser.add_argument('--pred_num_layers', type=int, default=2, help="for method 'gcn/gat'")
-    argparser.add_argument('--pred_dropout', type=float, default=0.5, help="for method 'gcn/gat'")
-    argparser.add_argument('--train_ratio', type=float, default=0, help="for method 'gcn/gat'")
-    argparser.add_argument('--val_ratio', type=float, default=0, help="for method 'gcn/gat'")
+    # Hyper-parameters for NORA
+    argparser.add_argument('--k1', type=float, default=0.5, help="For method 'nora': k1, within [0, 1]")
+    argparser.add_argument('--k2', type=float, default=[1, 0], nargs='+',
+        help="For method 'nora': k2 and k2', within [0, 1]")
+    argparser.add_argument('--k3', type=float, default=1,
+        help="For method 'nora': k3', usuall within [0.5, 5]")
+    argparser.add_argument('--self_buff', type=float, default=3.0, help="For method 'nora': beta")
+    argparser.add_argument('--grad_norm', type=float, default=1, help="For method 'nora': p-norm")
+    # Hyper-parameters for the baseline methods "mask" and "prediction"
+    argparser.add_argument('--lr', type=float, default=1e-3, help="For method 'mask' and 'prediction'")
+    argparser.add_argument('--wd', type=float, default=0,
+        help="For method 'mask' and 'prediction'. For 'mask', it is the alpha.")
+    argparser.add_argument('--num_epochs', type=int, default=100, help="For method 'mask' and 'prediction'")
+    argparser.add_argument('--beta', type=float, default=0.1, help="For method 'mask'")
+    argparser.add_argument('--pred_hidden', type=int, default=128, help="For method 'prediction'")
+    argparser.add_argument('--pred_num_layers', type=int, default=2, help="For method 'prediction'")
+    argparser.add_argument('--pred_dropout', type=float, default=0.5, help="For method 'prediction'")
+    # Data-split ratio
+    argparser.add_argument('--train_ratio', type=float, default=0, help="For method 'prediction'")
+    argparser.add_argument('--val_ratio', type=float, default=0, help="For all methods")
     args = argparser.parse_args()
     args = load_default_args(args)
     print(args)
 
     os.makedirs('save', exist_ok=True)
-    bias_list = []
+    result_list = []
     start_time = time.time()
-    if args.cycles == []:
-        args.cycles = [0, 1, 2, 3, 4]
     for run_time in args.cycles:
         graph_ori = load_dataset(args, device, run_time)
         if args.method == 'nora':
-            new_bias_list = nora(run_time, args, device, graph_ori)
+            new_result_list = nora(run_time, args, device, graph_ori)
         elif args.method == 'brute':
-            new_bias_list = brute(run_time, args, device, graph_ori)
+            new_result_list = brute(run_time, args, device, graph_ori)
         elif args.method == 'mask':
-            new_bias_list = node_mask(run_time, args, device, graph_ori)
+            new_result_list = node_mask(run_time, args, device, graph_ori)
         elif args.method in ['gcn-n', 'gcn-e', 'gat-n', 'gat-e']:
-            new_bias_list = gnn_predict(run_time, args, device, graph_ori)
-        bias_list.append(new_bias_list)
+            new_result_list = gnn_predict(run_time, args, device, graph_ori)
+        result_list.append(new_result_list)
         if args.method == 'brute':
             save_name = f'./save/{args.dataset}_{args.model}_{args.method}'
             if args.model not in ['TIMME', 'TIMME_edge']:
                 save_name += f'_{args.num_layers}_{args.hidden_size}'
             if args.cycles != [0, 1, 2, 3, 4]:
                 save_name += f'_{run_time}'
-            np.save(f'{save_name}.npy', bias_list)
-            print('saving:', f'{save_name}.npy')
+            np.save(f'{save_name}.npy', result_list)
+            print('Saving results in:', f'{save_name}.npy')
     time_cost = time.time() - start_time
-    print(args.method, args.dataset, args.model, 'time cost:', time_cost)
+    print(f'The time cost of {args.method} for {args.dataset} {args.model} is: {time_cost:.4f}s')
 
     save_name = f'./save/{args.dataset}_{args.model}_{args.method}'
     if args.model not in ['TIMME', 'TIMME_edge']:
         save_name += f'_{args.num_layers}_{args.hidden_size}'
     if args.method != 'brute':
-        np.save(f'{save_name}.npy', bias_list)
-        print('saving:', f'{save_name}.npy')
+        np.save(f'{save_name}.npy', result_list)
+        print('Saving results in:', f'{save_name}.npy')
 
 
 if __name__ == '__main__':

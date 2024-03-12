@@ -2,18 +2,17 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 import dgl
-import time
 # model
 from arxiv.DrGAT.model_drgat import DRGAT
 from TIMME.code.model.model import TIMME
 from planetoid.train import load_model as load_planetoid_model
-from arxiv.simple.train import load_model as load_arxiv_model
+from arxiv.others.train import load_model as load_arxiv_model
 # dataset
 from planetoid.train import load_dataset as load_planetoid_dataset
-from arxiv.simple.train import load_dataset as load_arxiv_dataset
+from arxiv.others.train import load_dataset as load_arxiv_dataset
 from TIMME.code.utils import multi_relation_load
 from planetoid.train import load_config as load_planetoid_config
-from arxiv.simple.train import load_config as load_arxiv_config
+from arxiv.others.train import load_config as load_arxiv_config
 
 
 # load dataset
@@ -91,6 +90,9 @@ def load_default_args(args):
     else:   # Twitter datasdets
         if args.num_layers == 0:
             args.num_layers = 2
+    if hasattr(args, 'cycles'):
+        if args.cycles == []:
+            args.cycles = [0, 1, 2, 3, 4]
     return args
 
 
@@ -103,7 +105,7 @@ def load_model(run_time, args, device, graph_ori):
             saved_name = f'arxiv/DrGAT/saved_model/{run_time}_student_{args.hidden_size}.pkl'
         else:
             model = load_arxiv_model(args, graph_ori)
-            saved_name = f'arxiv/simple/saved_model/{run_time}_{args.model.lower()}_{args.num_layers}_{args.hidden_size}.pkl'
+            saved_name = f'arxiv/others/saved_model/{run_time}_{args.model.lower()}_{args.num_layers}_{args.hidden_size}.pkl'
     elif args.dataset in ['P50', 'P_20_50']:
         features_ori, adjs_ori, triplets_ori = graph_ori
         model = TIMME(num_relation=5, num_entities=features_ori.shape[0], num_adjs=11,
@@ -111,76 +113,20 @@ def load_model(run_time, args, device, graph_ori):
             relations=['retweet', 'mention', 'friend', 'reply', 'favorite'], regularization=0.01,
             skip_mode='add', attention_mode='self', trainable_features=None)
         saved_name = f'TIMME/saved_model/{run_time}_{args.dataset}_TIMME.pkl'
-        model.load_state_dict(torch.load(saved_name))
     else:  # planetoid
         model = load_planetoid_model(args, graph_ori)
         saved_name = f'planetoid/saved_model/{run_time}_{args.dataset}_{args.model.lower()}_{args.num_layers}_{args.hidden_size}.pkl'
-    print('loading model from', saved_name)
     model.load_state_dict(torch.load(saved_name))
     model = model.to(device)
+    print('Loaded model from', saved_name)
     return model
 
 
+# Load the saved results
 def load_results(args, method):
-    if method not in ['degree', 'betweenness']:
-        save_name = f'./save/{args.dataset}_{args.model}_{method}'
-        if args.model not in ['TIMME', 'TIMME_edge']:
-            save_name += f'_{args.num_layers}_{args.hidden_size}'
-        res = np.load(f'{save_name}.npy', allow_pickle=True)
-        assert len(res) == 5
-        return res.mean(0)
-    
-    elif method == 'degree':
-        graph_ori = load_dataset(args, device='cpu', runtime=0)
-        if args.dataset in ['ogbn-arxiv', 'Cora', 'CiteSeer', 'PubMed']:
-            graph_ori = graph_ori.remove_self_loop()
-            deg = graph_ori.in_degrees().float()
-        elif args.dataset in ['P50', 'P_20_50']:
-            features_ori, adjs_ori, link_info = graph_ori
-            num_node = features_ori.shape[0]
-            deg = torch.zeros(num_node)
-            for i in range(10):      # Skip self-loop without counting the 10th
-                new_deg = degree(adjs_ori[i].coalesce().indices()[0], num_nodes=num_node)
-                deg = deg + new_deg
-        return deg
-    
-    else:    # betweenness
-        assert method == 'betweenness'
-        graph_ori = load_dataset(args, device='cpu', runtime=0)
-        if args.dataset in ['ogbn-arxiv', 'Cora', 'CiteSeer', 'PubMed']:
-            try:
-                if args.dataset == 'ogbn-arxiv':
-                    betweenness = np.load('./arxiv/data/ogbn_arxiv/processed/betweenness.npy')
-                else:
-                    betweenness = np.load(f'./planetoid/data/{args.dataset}/betweenness.npy')
-            except:
-                print('generating betweenness centrality')
-                start_time = time.time()
-                num_node = graph_ori.num_nodes()
-                data = dgl.to_networkx(graph_ori)
-                betweenness = nx.betweenness_centrality(data, k=20000)
-                betweenness = np.array([betweenness[i] for i in range(num_node)])
-                print('betweenness generation time:', time.time() - start_time)
-                if args.dataset == 'ogbn-arxiv':
-                    np.save('./arxiv/data/ogbn_arxiv/processed/betweenness.npy', betweenness)
-                else:
-                    np.save(f'./planetoid/data/{args.dataset}/betweenness.npy', betweenness)
-        else:
-            try:
-                betweenness = np.load(f'./TIMME/data/{args.dataset}/betweenness.npy')
-            except:
-                print('generating betweenness centrality')
-                start_time = time.time()
-                features, adjs, link_info = graph_ori
-                num_node = adjs[0].shape[0]
-                edge0 = [adjs[i]._indices()[0] for i in range(10)]
-                edge1 = [adjs[i]._indices()[1] for i in range(10)]
-                edge0 = torch.concat(edge0)
-                edge1 = torch.concat(edge1)
-                graph = dgl.graph((edge0, edge1))
-                data = dgl.to_networkx(graph)
-                betweenness = nx.betweenness_centrality(data)
-                betweenness = np.array([betweenness[i] for i in range(num_node)])
-                np.save(f'./TIMME/data/{args.dataset}/betweenness.npy', betweenness)
-                print('betweenness generation time:', time.time() - start_time)
-        return betweenness
+    save_name = f'./save/{args.dataset}_{args.model}_{method}'
+    if args.model not in ['TIMME', 'TIMME_edge']:
+        save_name += f'_{args.num_layers}_{args.hidden_size}'
+    res = np.load(f'{save_name}.npy', allow_pickle=True)
+    assert len(res) == 5
+    return res.mean(0)

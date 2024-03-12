@@ -10,7 +10,7 @@ import matplotlib
 import matplotlib.pyplot as plt
 import dgl
 from load import load_default_args, load_results, load_dataset, load_model
-from arxiv.simple.train import load_dataset as load_arxiv_dataset
+from arxiv.others.train import load_dataset as load_arxiv_dataset
 from TIMME.code.utils import multi_relation_load
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -19,14 +19,11 @@ matplotlib.rcParams['pdf.use14corefonts'] = True  # Use type 1 font
 # matplotlib.rcParams['text.usetex'] = True
 
 
+# Evaluate the performance
 def performance(args):
     gt = load_results(args, 'brute')
     res = load_results(args, args.method)
-    # gt_sort = np.argsort(gt)
-    # res_sort = np.argsort(res)
-    # assert (res<0).sum() == 0
     res[res < 0] = 0
-
     if args.method in ['gcn-n', 'gcn-e', 'gat-n', 'gat-e']:
         num_train = round(args.train_ratio * len(gt))
     else:
@@ -34,32 +31,19 @@ def performance(args):
     num_val = round(args.val_ratio * len(gt))
     val_perf = stats.pearsonr(gt[num_train:num_train+num_val], res[num_train:num_train+num_val])[0]
     test_perf = stats.pearsonr(gt[num_train+num_val:], res[num_train+num_val:])[0]
-    print(f'val: {val_perf:.3f}, test: {test_perf:.3f}')
-    # perform_list = [gt[res_sort[-1]] / gt[gt_sort[-1]] * 100]
-    # for rate in [0.05, 0.10]:
-    #     res_perform = gt[res_sort[-round(rate * len(gt)):]].sum()
-    #     gt_perform = gt[gt_sort[-round(rate * len(gt)):]].sum()
-    #     perform_list.append(res_perform / gt_perform * 100)
-    # output = ''
-    # for i in perform_list:
-        # output += f'{i:.1f}\% & '
-    # if args.method == 'nora':
-        # output += f'\\textbf{stats.pearsonr(gt, res)[0]:.3f} & '
-    # else:
-        # output += f'{stats.pearsonr(gt, res)[0]:.3f} & '
-    # print(output)
+    print(f'Val performance: {val_perf:.3f}, Test performance: {test_perf:.3f}')
 
 
+# Evaluate the stability across different GNN models and hidden sizes
 def stability_arxiv():
-    list1 = np.load(f'./save/ogbn-arxiv_GCN_brute_3_128_mean.npy', allow_pickle=True).mean(0)
-    list2 = np.load(f'./save/ogbn-arxiv_GCN_brute_3_mean.npy', allow_pickle=True).mean(0)
-    list3 = np.load(f'./save/ogbn-arxiv_GCN_brute_3_512_mean.npy', allow_pickle=True).mean(0)
-    list4 = np.load(f'./save/ogbn-arxiv_GraphSAGE_brute_3_128_mean.npy', allow_pickle=True).mean(0)
-    list5 = np.load(f'./save/ogbn-arxiv_GraphSAGE_brute_3_mean.npy', allow_pickle=True).mean(0)
-    list6 = np.load(f'./save/ogbn-arxiv_GraphSAGE_brute_3_512_mean.npy', allow_pickle=True).mean(0)
-    list7 = np.load(f'./save/ogbn-arxiv_DrGAT_brute_3_128_mean.npy', allow_pickle=True).mean(0)
-    list8 = np.load(f'./save/ogbn-arxiv_DrGAT_brute_3_mean.npy', allow_pickle=True).mean(0)
-    assert list2.shape[0] > 1000
+    list1 = np.load(f'./save/ogbn-arxiv_GCN_brute_3_128.npy', allow_pickle=True).mean(0)
+    list2 = np.load(f'./save/ogbn-arxiv_GCN_brute_3_256.npy', allow_pickle=True).mean(0)
+    list3 = np.load(f'./save/ogbn-arxiv_GCN_brute_3_512.npy', allow_pickle=True).mean(0)
+    list4 = np.load(f'./save/ogbn-arxiv_GraphSAGE_brute_3_128.npy', allow_pickle=True).mean(0)
+    list5 = np.load(f'./save/ogbn-arxiv_GraphSAGE_brute_3_256.npy', allow_pickle=True).mean(0)
+    list6 = np.load(f'./save/ogbn-arxiv_GraphSAGE_brute_3_512.npy', allow_pickle=True).mean(0)
+    list7 = np.load(f'./save/ogbn-arxiv_DrGAT_brute_3_128.npy', allow_pickle=True).mean(0)
+    list8 = np.load(f'./save/ogbn-arxiv_DrGAT_brute_3_256.npy', allow_pickle=True).mean(0)
 
     pearson_list = [
         np.mean([stats.pearsonr(list1, list2)[0], stats.pearsonr(list2, list3)[0], stats.pearsonr(list1, list3)[0]]),
@@ -78,31 +62,20 @@ def stability_arxiv():
         stats.pearsonr(list1, list7)[0], stats.pearsonr(list2, list8)[0]
     ]
     # print(pearson_list)
-    print(np.mean(pearson_list), np.std(pearson_list))
+    print(np.mean(pearson_list))
 
 
+# Evaluate the stability across different GNN models and hidden sizes
 def stability_planetoid():
-    if args.dataset in ['Cora', 'PubMed']:
-        list1 = np.load(f'./save/{args.dataset}_GCN_brute_2_128_mean.npy', allow_pickle=True).mean(0)
-        list2 = np.load(f'./save/{args.dataset}_GCN_brute_2_256_mean.npy', allow_pickle=True).mean(0)
-        list3 = np.load(f'./save/{args.dataset}_GCN_brute_2_512_mean.npy', allow_pickle=True).mean(0)
-        list4 = np.load(f'./save/{args.dataset}_GraphSAGE_brute_2_128_mean.npy', allow_pickle=True).mean(0)
-        list5 = np.load(f'./save/{args.dataset}_GraphSAGE_brute_2_mean.npy', allow_pickle=True).mean(0)
-        list6 = np.load(f'./save/{args.dataset}_GraphSAGE_brute_2_512_mean.npy', allow_pickle=True).mean(0)
-        list7 = np.load(f'./save/{args.dataset}_GAT_brute_2_128_mean.npy', allow_pickle=True).mean(0)
-        list8 = np.load(f'./save/{args.dataset}_GAT_brute_2_256_mean.npy', allow_pickle=True).mean(0)
-        list9 = np.load(f'./save/{args.dataset}_GAT_brute_2_512_mean.npy', allow_pickle=True).mean(0)
-    elif args.dataset == 'CiteSeer':
-        list1 = np.load(f'./save/{args.dataset}_GCN_brute_2_128_mean.npy', allow_pickle=True).mean(0)
-        list2 = np.load(f'./save/{args.dataset}_GCN_brute_2_256_mean.npy', allow_pickle=True).mean(0)
-        list3 = np.load(f'./save/{args.dataset}_GCN_brute_2_512_mean.npy', allow_pickle=True).mean(0)
-        list4 = np.load(f'./save/{args.dataset}_GraphSAGE_brute_2_mean.npy', allow_pickle=True).mean(0)
-        list5 = np.load(f'./save/{args.dataset}_GraphSAGE_brute_2_256_mean.npy', allow_pickle=True).mean(0)
-        list6 = np.load(f'./save/{args.dataset}_GraphSAGE_brute_2_512_mean.npy', allow_pickle=True).mean(0)
-        list7 = np.load(f'./save/{args.dataset}_GAT_brute_2_128_mean.npy', allow_pickle=True).mean(0)
-        list8 = np.load(f'./save/{args.dataset}_GAT_brute_2_mean.npy', allow_pickle=True).mean(0)
-        list9 = np.load(f'./save/{args.dataset}_GAT_brute_2_512_mean.npy', allow_pickle=True).mean(0)
-    assert list2.shape[0] > 1000
+    list1 = np.load(f'./save/{args.dataset}_GCN_brute_2_128.npy', allow_pickle=True).mean(0)
+    list2 = np.load(f'./save/{args.dataset}_GCN_brute_2_256.npy', allow_pickle=True).mean(0)
+    list3 = np.load(f'./save/{args.dataset}_GCN_brute_2_512.npy', allow_pickle=True).mean(0)
+    list4 = np.load(f'./save/{args.dataset}_GraphSAGE_brute_2_128.npy', allow_pickle=True).mean(0)
+    list5 = np.load(f'./save/{args.dataset}_GraphSAGE_brute_2_256.npy', allow_pickle=True).mean(0)
+    list6 = np.load(f'./save/{args.dataset}_GraphSAGE_brute_2_512.npy', allow_pickle=True).mean(0)
+    list7 = np.load(f'./save/{args.dataset}_GAT_brute_2_128.npy', allow_pickle=True).mean(0)
+    list8 = np.load(f'./save/{args.dataset}_GAT_brute_2_256.npy', allow_pickle=True).mean(0)
+    list9 = np.load(f'./save/{args.dataset}_GAT_brute_2_512.npy', allow_pickle=True).mean(0)
 
     pearson_list = [
         np.mean([stats.pearsonr(list1, list2)[0], stats.pearsonr(list2, list3)[0], stats.pearsonr(list1, list3)[0]]),
@@ -121,9 +94,12 @@ def stability_planetoid():
         stats.pearsonr(list1, list7)[0], stats.pearsonr(list2, list8)[0], stats.pearsonr(list3, list9)[0]
     ]
     print(pearson_list)
-    print(np.mean(pearson_list), np.std(pearson_list))
+    print(np.mean(pearson_list))
 
 
+# Explain the performance by analyzing its correlation with other factors. This explanation part
+# is not included in our paper, because the factors are too complex to draw a clear conclusion.
+# Instead, we provide some intuitive analysis of NORA's approximation error sources
 def explain(args):
     stability_list, perf_list = [], []
     dataset_list = ['Cora', 'CiteSeer', 'PubMed', 'ogbn-arxiv']
@@ -183,17 +159,8 @@ def explain(args):
     plt.savefig('explain.pdf', bbox_inches='tight')
 
 
-def plot_curve(args):
-    gt = load_results(args, 'brute')
-    res = load_results(args, args.method)
-    res[res < 0] = 0
-    plt.figure(figsize=(10, 10))
-    plt.plot(gt, res)
-    plt.savefig('plot.png', bbox_inches='tight')
-
-
+# Observe the top influential nodes
 def arxiv_case_study(args):
-    assert args.model == 'DrGAT'
     gt = load_results(args, 'brute')
     sort_idx = np.argsort(gt)
     idx2mag = pd.read_csv('arxiv/data/ogbn_arxiv/mapping/nodeidx2paperid.csv.gz')
@@ -236,97 +203,32 @@ def arxiv_case_study(args):
                 out = F.softmax(out, dim=1)
                 new_out_list.append(out)
         new_out = torch.stack(new_out_list).mean(0)
-        bias = new_out - torch.cat((ori_out[:r_node], ori_out[r_node+1:]))
-        bias = bias.mean(0)
-        top_idx = torch.topk(bias.abs(), 3).indices
+        influence = new_out - torch.cat((ori_out[:r_node], ori_out[r_node+1:]))
+        influence = influence.mean(0)
+        top_idx = torch.topk(influence.abs(), 3).indices
         for idx in top_idx:
             top_label = label2category[label2category['label idx'] == labels_ori[idx].item()]
             top_label = top_label['arxiv category'].values[0]
-            print(f'{top_label} changed by {bias[idx]};', end=' ')
-        print()
+            print(f'{top_label} changed by {influence[idx]};', end=' ')
+        print('\n')
 
 
-def twitter_case_study(args):
-    assert args.model == 'TIMME'
-    gt = load_results(args, 'brute')
-    sort_idx = np.argsort(gt)
-    twitter_ids = pd.read_csv(f'TIMME/data/{args.dataset}/all_twitter_ids.csv')['twitter_id']
-    # user_info = json.load(open(f'TIMME/data/formatted_location/simplified_user_info.json'))
-    # dict_info = pd.read_csv(f'TIMME/data/{args.dataset}/all_twitter_ids.csv')['twitter_id']
-    adjs_ori, features_ori, labels_info, trainable, mask, link_info, (label_map, all_id_list) = \
-        multi_relation_load(f'TIMME/data/{args.dataset}', 
-        files=['retweet_list.csv', 'mention_list.csv', 'friend_list.csv', 'reply_list.csv', 'favorite_list.csv'], 
-        feature_data='one_hot', feature_file=None, freeze_feature=False, split_links=False,
-        additional_labels_files=["TIMME/data/additional_labels/new_dict_cleaned.csv"], cycle=0)
-    idx_train, idx_val, idx_test, labels_ori = labels_info
-    labels = labels.to(device)
-    adjs_ori = [i.to(device) for i in adjs_ori]
-    features_ori = features_ori.to(device)
-    graph_ori = (features_ori, adjs_ori, None)
-    num_node = features_ori.shape[0]
-
-    ori_out_list = []
-    for run_time in range(5):
-        model = load_model(run_time, args, device, graph_ori)
-        model.eval()
-        with torch.no_grad():
-            ori_out = model(features_ori, adjs_ori, only_classify=True)
-            ori_out = torch.exp(ori_out)
-            ori_out_list.append(ori_out)
-    ori_out_list = torch.stack(ori_out_list)
-    ori_out = ori_out_list.mean(0)
-
-    for i in range(1, 11):
-        r_node = sort_idx[-i]
-        tid = twitter_ids[i]
-        print(f'Top {i}: {tid}')
-        new_out_list = []
-        feat_indices = features_ori._indices()
-        feat_indices1 = torch.cat((feat_indices[0, :r_node], feat_indices[0, r_node + 1:] - 1))
-        feat_indices2 = torch.cat((feat_indices[1, :r_node], feat_indices[1, r_node + 1:]))
-        feat_indices = torch.stack([feat_indices1, feat_indices2])
-        feat_values = features_ori._values()[1:]
-        features = torch.sparse_coo_tensor(indices=feat_indices, values=feat_values, size=[num_node-1, num_node])
-
-        adjs = []
-        for adj_ori in adjs_ori:
-            values = adj_ori._values()
-            indices = adj_ori._indices()
-            unequal_mask = (indices != r_node)
-            unequal_mask = unequal_mask[0] & unequal_mask[1]
-            indices = indices[:, unequal_mask]
-            values = values[unequal_mask]
-            bigger_mask = (indices > r_node)
-            indices[bigger_mask] = indices[bigger_mask] - 1
-            adj = torch.sparse_coo_tensor(indices=indices, values=values, size=[num_node - 1, num_node - 1])
-            adjs.append(adj)
-        
-        for run_time in range(5):
-            model = load_model(run_time, args, device, graph_ori)
-            model.eval()
-            with torch.no_grad():
-                out = model(features, adjs, only_classify=True)
-                out = torch.exp(out)
-                new_out_list.append(out)
-        new_out = torch.stack(new_out_list).mean(0)
-        bias = new_out - torch.cat((ori_out[:r_node], ori_out[r_node+1:]))
-        bias = bias.mean(0)
-        print(f'Label changed by {bias}')
-        print()
-
-
-# analyze how much the top influential nodes account for the total influence
+# Analyze how much the top influential nodes account for the total influence
 def analyze_top_rate(args):
     rates = []
     if args.dataset in ['Cora', 'CiteSeer', 'PubMed']:
-        # model_list = ['GCN', 'GraphSAGE', 'GAT', 'GCNII']
-        model_list = ['GCN_edge', 'GraphSAGE_edge', 'GAT_edge', 'GCNII_edge']
+        model_list = ['GCN', 'GraphSAGE', 'GAT', 'GCNII']
+        # model_list = ['GCN_edge', 'GraphSAGE_edge', 'GAT_edge', 'GCNII_edge']
     elif args.dataset == 'ogbn-arxiv':
-        # model_list = ['GCN', 'GraphSAGE', 'DrGAT', 'GCNII']
-        model_list = ['GCN_edge', 'GraphSAGE_edge', 'GAT_edge', 'GCNII_edge']
+        model_list = ['GCN', 'GraphSAGE', 'DrGAT', 'GCNII']
+        # model_list = ['GCN_edge', 'GraphSAGE_edge', 'GAT_edge', 'GCNII_edge']
     else:
-        # model_list = ['TIMME']
-        model_list = ['TIMME_edge']
+        model_list = ['TIMME']
+        # model_list = ['TIMME_edge']
+    print("We are using all available node classification GNN models' results")
+    print("If you want to analyze one specific GNN or want to switch to link prediction models,")
+    print("Please set it manually in the function 'analyze_top_rate'")
+    
     for model in model_list:
         tmp_rates = []
         args.model = model
@@ -339,7 +241,8 @@ def analyze_top_rate(args):
         for i in [0.01, 0.03, 0.1]:
             tmp_rates.append(gt[round(-i * len(gt)):].sum() / gt.sum())
         rates.append(tmp_rates)
-        print(np.mean(rates, 0))
+    rates = np.mean(rates, 0)
+    print(f'Top 1%: {rates[0]:.4f}, top 3%: {rates[1]:.4f}, top 10%: {rates[2]:.4f}')
 
 
 # Analyze the relation between node influence and degree on Twitter datasets
@@ -502,26 +405,28 @@ def main():
         'CiteSeer', 'PubMed', 'ogbn-arxiv', 'P50', 'P_20_50'])
     argparser.add_argument('--model', type=str, default='GCN', choices=['GCN', 'GraphSAGE', 'GAT',
         'DrGAT', 'GCNII', 'TIMME', 'GCN_edge', 'GraphSAGE_edge', 'GAT_edge', 'GCNII_edge', 'TIMME_edge'])
+    argparser.add_argument('--method', type=str, default='nora',
+        choices=['nora', 'mask', 'gcn-n', 'gcn-e', 'gat-n', 'gat-e'])
+    # The desired evaluation function
     argparser.add_argument('--analyze', type=str, default='performance', choices=['performance',
         'stability', 'explain', 'plot_curve', 'case_study', 'top_rate', 'twitter_degree', 'twitter_edge'],
-        help="performance: basic analysis; \
-        stability: analyze stability of different models and hyper-parameters; \
-        explain: explain the model performance \
-        plot_curve: plot the predicted and real influence \
+        help="performance: evaluate the performance; \
+        stability: evaluate the stability across different GNN models and hidden sizes; \
+        explain: explain the performance by analyzing its correlation with other factors; \
         case_study: observe the top influential nodes \
         top_rate: analyze how much the top influential nodes account for the total influence \
         twitter_degree: analyze the relationship between influence and degree on Twitter datasets \
         twitter_edge: analyze the relationship between influence and edge type on Twitter datasets")
+    # Hyper-parameters of the trained GNN model used to load the model
     argparser.add_argument('--num_layers', type=int, default=0, help="0 means default")
     argparser.add_argument('--hidden_size', type=int, default=0, help="0 means default")
     argparser.add_argument('--dropout', type=int, default=0, help="0 means default")
-    argparser.add_argument('--method', type=str, default='nora', choices=['nora', 'degree',
-        'betweenness', 'mask', 'gcn-n', 'gcn-e', 'gat-n', 'gat-e'])
+    # Data-split ratio
     argparser.add_argument('--train_ratio', type=float, default=0, help="for method 'gcn/gat'")
     argparser.add_argument('--val_ratio', type=float, default=0, help="for method 'mask' and 'gcn/gat'")
     args = argparser.parse_args()
-
     args = load_default_args(args)
+    
     if args.analyze == 'performance':
         performance(args)
     elif args.analyze == 'stability':
@@ -531,14 +436,9 @@ def main():
             stability_planetoid()
     elif args.analyze == 'explain':
         explain(args)
-    elif args.analyze == 'plot_curve':
-        plot_curve(args)
     elif args.analyze == 'case_study':
-        if args.dataset == 'ogbn-arxiv':
-            arxiv_case_study(args)
-        else:
-            assert args.dataset in ['P50', 'P_20_50']
-            twitter_case_study(args)
+        assert args.dataset == 'ogbn-arxiv'
+        arxiv_case_study(args)
     elif args.analyze == 'top_rate':
         analyze_top_rate(args)
     elif args.analyze == 'twitter_degree':

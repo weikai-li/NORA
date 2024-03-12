@@ -264,7 +264,7 @@ def run(args, graph, labels, train_idx, val_idx, test_idx, evaluator, n_running)
             final_pred = pred
             if mode == 'teacher':
                 save_pred(final_pred, n_running, args.kd_dir)
-            torch.save(model.state_dict(), f'saved_model/{args.cycle}_{args.mode}_{args.n_hidden}.pkl')
+            torch.save(model.state_dict(), f'./saved_model/{args.cycle}_{args.mode}_{args.n_hidden}.pkl')
 
         if epoch == args.n_epochs or epoch % args.log_every == 0:
             logging.info(
@@ -334,8 +334,8 @@ def main():
     args = argparser.parse_args()
 
     # Adjust kd_dir here
-    args.kd_dir = '{}/-L{}-H{}-Ptrn_{}'.format(args.kd_dir, args.n_layers, args.n_hidden, not args.pretrain_path == 'None')
-    args.save = '{}/-L{}-H{}-Ptrn_{}'.format(args.kd_dir, args.n_layers, args.n_hidden, not args.pretrain_path == 'None')
+    args.kd_dir = '{}/-L{}-H{}-Ptrn_{}_{}'.format(args.kd_dir, args.n_layers, args.n_hidden, not args.pretrain_path == 'None', args.cycle)
+    args.save = '{}/-L{}-H{}-Ptrn_{}_{}'.format(args.kd_dir, args.n_layers, args.n_hidden, not args.pretrain_path == 'None', args.cycle)
     args.save = 'log/{}-{}-{}'.format(args.save, time.strftime("%Y%m%d-%H%M%S"), str(uuid.uuid4()))
     if not os.path.exists(args.save):
         os.makedirs(args.save)
