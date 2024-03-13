@@ -16,7 +16,6 @@ from TIMME.code.utils import multi_relation_load
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 matplotlib.rcParams['ps.useafm'] = True
 matplotlib.rcParams['pdf.use14corefonts'] = True  # Use type 1 font
-# matplotlib.rcParams['text.usetex'] = True
 
 
 # Evaluate the performance
@@ -310,6 +309,7 @@ def twitter_degree(args):
     plt.title(args.dataset, size=26)
     plt.savefig(f'degree_{args.dataset}.png', bbox_inches='tight')
     plt.savefig(f'degree_{args.dataset}.pdf', bbox_inches='tight')
+    print(f'Saved figure: degree_{args.dataset}.png/pdf')
 
 
 def twitter_edge(args):
@@ -397,6 +397,7 @@ def twitter_edge(args):
     plt.savefig(f'relation_{args.dataset}.png', bbox_inches='tight')
     plt.savefig(f'relation_{args.dataset}.pdf', bbox_inches='tight')
     plt.close()
+    print(f'Saved figure: relation_{args.dataset}.png/pdf')
 
 
 def main():
