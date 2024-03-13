@@ -1,6 +1,6 @@
 saved_model
 planetoid/data
-arxiv/data/*
+arxiv/data
 __pycache__
 kd
 log

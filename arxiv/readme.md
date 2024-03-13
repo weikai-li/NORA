@@ -13,7 +13,7 @@ Except for the DrGAT model, the other four GNN models are based on the implement
 
 ## Train the DrGAT model
 
-First, download the pretrained node embeddings from "https://github.com/anonymousaabc/DRGCN/raw/main/drgat/dataset/ogbn-arxiv-pretrain/X.all.xrt-emb.npy?download=" and put the file under "./data/ogbn-arxiv-pretrain".
+First, download the pretrained node embeddings from "https://github.com/anonymousaabc/DRGCN/raw/main/drgat/dataset/ogbn-arxiv-pretrain/X.all.xrt-emb.npy?download=" and put the file under the directory "./data/ogbn-arxiv-pretrain".
 
 Then, enter the "./DrGAT" directory. We have provided the scripts in "./DrGAT/run.sh". Please use the script to first train the teacher model and then the student model. Change "--cycle" to 0, 1, 2, 3, 4 to manually cycle the data split and train the model for five times. At the first time of running the codes, the dataset is automatically downloaded. After training, the trained GNNs are saved in the "./DrGAT/saved_model" directory.
 
