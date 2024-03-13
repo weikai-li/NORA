@@ -1,7 +1,7 @@
 saved_model
 planetoid/data
 arxiv/data/ogbn_arxiv/*
-TIMME/data
+arxiv/data/ogbn-arxiv-pretrain/*
 __pycache__
 kd
 log

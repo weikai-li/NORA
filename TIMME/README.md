@@ -1,3 +1,32 @@
+## About
+
+This directory contains codes for training GNN models on the Twitter datasets.
+
+- GNN models included in this directory: TIMME
+- Datasets included in this directory: P50, P_20_50
+
+This directory is based on the [GitHub repo](https://github.com/PatriciaXiao/TIMME) of the TIMME paper [1].
+
+[1] Zhiping Xiao, Weiping Song, Haoyan Xu, Zhicheng Ren, and Yizhou Sun. 2020. TIMME: Twitter ideology-detection via multi-task multi-relational embedding. In Proceedings of the 26th ACM SIGKDD International Conference on Knowledge Discovery & Data Mining. 2258–2268.
+
+
+
+## Train the TIMME model
+
+First, enter the "./code" directory.
+
+```shell
+python main.py --task TIMME --data P50
+```
+
+Running the script above will train the model with the tuned hyper-parameters. You can substitute the dataset name with "P_20_50".
+
+At the first time of running the codes, the dataset is automatically downloaded. After training, the trained GNNs are saved in the "./saved_model" directory.
+
+Below we attach the original readme of the TIMME directory.
+
+
+
 # TIMME
 
 ## Data Updates on 7 March 2021: Text provided

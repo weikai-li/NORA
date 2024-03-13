@@ -1,15 +1,15 @@
 ## About
 
-This directory contains codes for training GNN models on the Planetoid datasets. The GNN models are based on the implementations of the dgl library [1].
+This directory contains codes for training GNN models on the Planetoid datasets. The GNN models are based on the implementations of the [dgl](https://www.dgl.ai/) library [1].
 
 - GNN models included in this directory: GCN, GraphSAGE, GAT, GCNII
 - Datasets included in this directory: Cora, CiteSeer, PubMed
 
-[1] Wang, Minjie, et al. "Deep graph library: A graph-centric, highly-performant package for graph neural networks." *arXiv preprint arXiv:1909.01315* (2019).
+[1] Wang, Minjie, et al. "Deep graph library: A graph-centric, highly-performant package for graph neural networks." arXiv preprint arXiv:1909.01315 (2019).
 
 
 
-## Usage
+## Train the GNN models
 
 Training a node classification model:
 
