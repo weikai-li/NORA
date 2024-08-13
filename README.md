@@ -51,3 +51,19 @@ If you want to experiment with other hyper-parameters, please refer to the annot
 ##### Evaluate the results
 
 We use evaluate.py for evaluation. If you want to evaluate the approximation performance, we provide the evaluation script in "nora.sh", "mask.sh", "gcn_n.sh", and "gcn_e.sh". Please choose the one according to the dataset and GNN model you want to use. For other evaluation functions, please see the "args" settings in evaluate.py.
+
+
+
+## Citation
+
+Thank you for being interested in our paper!
+
+```
+@inproceedings{li2024fast,
+  title={Fast Inference of Removal-Based Node Influence},
+  author={Li, Weikai and Xiao, Zhiping and Luo, Xiao and Sun, Yizhou},
+  booktitle={Proceedings of the ACM on Web Conference 2024},
+  pages={422--433},
+  year={2024}
+}
+```
